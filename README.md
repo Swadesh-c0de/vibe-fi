@@ -2,17 +2,42 @@
 
 A beautiful terminal-based music player with YouTube search, local library browsing, and a retro visualizer.
 
-## Features
+---
 
-✨ **Modern TUI Design** - Clean interface with borders, colors, and smooth navigation  
-🎵 **YouTube Integration** - Search and play music directly from YouTube  
-📁 **Local Library** - Browse and play your local music collection  
-📊 **Live Visualizer** - Animated audio visualizer bars  
-⏯️ **Queue Management** - Navigate between search results and playback  
-🔄 **Replay Function** - Quickly replay the last played track  
-⌨️ **Intuitive Controls** - Keyboard-driven interface
+## 📸 UI Preview
 
-## Installation
+
+### **Intro Screen**
+
+![](images/Intro.png)
+
+### **Library Browser**
+
+![](images/Library.png)
+
+### **YouTube Search Results**
+
+![](images/Search.png)
+
+### **Playback + Visualizer**
+
+![](images/VibeFi.png)
+
+---
+
+## ✨ Features
+
+- **Modern TUI Design** – Clean interface with borders, colors, and smooth navigation
+- **YouTube Integration** – Search and play music directly from YouTube
+- **Local Library** – Browse and play your local music collection
+- **Live Visualizer** – Animated audio visualizer bars
+- **Queue Management** – Navigate between search results and playback
+- **Replay Function** – Quickly replay the last played track
+- **Intuitive Controls** – Keyboard-driven interface
+
+---
+
+## 🚀 Installation
 
 ### Automatic Installation (Recommended)
 
@@ -26,25 +51,28 @@ chmod +x install.sh
 ```
 
 **Supported Systems:**
+
 - ✅ Arch Linux (and derivatives)
 - ✅ Ubuntu/Debian (and derivatives)
 - ✅ macOS (requires Homebrew)
 
-### Manual Installation
+---
 
-#### Dependencies
+## 📦 Manual Installation
 
-- **Build tools**: `cmake`, `make`, `g++`
-- **Libraries**: `libmpv-dev`, `libncurses-dev`
-- **Runtime**: `mpv`, `yt-dlp`, `ffmpeg`
+### Dependencies
 
-#### Arch Linux
+- **Build tools:** `cmake`, `make`, `g++`
+- **Libraries:** `libmpv-dev`, `libncurses-dev`
+- **Runtime:** `mpv`, `yt-dlp`, `ffmpeg`
+
+### Arch Linux
 
 ```bash
 sudo pacman -S base-devel cmake mpv ncurses yt-dlp ffmpeg
 ```
 
-#### Ubuntu/Debian
+### Ubuntu/Debian
 
 ```bash
 sudo apt install build-essential cmake libmpv-dev libncurses-dev mpv ffmpeg
@@ -53,13 +81,13 @@ sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /u
 sudo chmod a+rx /usr/local/bin/yt-dlp
 ```
 
-#### macOS
+### macOS
 
 ```bash
 brew install cmake mpv ncurses yt-dlp ffmpeg pkg-config
 ```
 
-#### Build
+### Build
 
 ```bash
 mkdir build && cd build
@@ -68,7 +96,9 @@ make
 sudo cp vibe_fi /usr/local/bin/vibe
 ```
 
-## Usage
+---
+
+## 🎧 Usage
 
 ```bash
 vibe
@@ -76,84 +106,106 @@ vibe
 
 The app starts with an intro screen. From there:
 
-## Controls
+---
 
-### Global
-- **ESC** - Quit application
-- **Arrow Keys** - Navigate lists
+## ⌨️ Controls
 
-### Intro Screen
-- **L** - Go to Library
-- **S** - Search YouTube
-- **Q** - Quit
+### **Global**
 
-### Playback Mode
-- **SPACE** - Play/Pause
-- **Q** - Return to search results queue
-- **L** - Go to Library
-- **S** - New search
-- **R** - Replay last track
-- **←/→** - Seek backward/forward (5s)
-- **+/-** - Volume up/down
+- **ESC** — Quit application
+- **Arrow Keys** — Navigate lists
 
-### Library Browser
-- **ENTER** - Play file or enter directory
-- **BACKSPACE** - Go up one directory
-- **ESC** - Back to playback
+### **Intro Screen**
 
-### Search
-- **Type** - Enter search query
-- **ENTER** - Execute search
-- **ESC** - Cancel
+- **L** — Go to Library
+- **S** — Search YouTube
+- **Q** — Quit
 
-### Search Results
-- **ENTER** - Play selected track
-- **S** - Start new search
-- **ESC** - Back to playback
+### **Playback Mode**
 
-## Features in Detail
+- **SPACE** — Play/Pause
+- **Q** — Return to search results queue
+- **L** — Go to Library
+- **S** — New search
+- **R** — Replay last track
+- **←/→** — Seek backward/forward (5s)
+- **+/-** — Volume up/down
 
-### YouTube Search
-Search for any song, artist, or playlist. Results show:
-- Track title (sanitized for terminal display)
-- Duration
-- Up to 10 results per search
+### **Library Browser**
 
-### Local Library
-- Automatically scans your `~/Music` directory
+- **ENTER** — Play file or enter directory
+- **BACKSPACE** — Go up one directory
+- **ESC** — Back to playback
+
+### **Search**
+
+- **Type** — Enter search query
+- **ENTER** — Execute search
+- **ESC** — Cancel
+
+### **Search Results**
+
+- **ENTER** — Play selected track
+- **S** — Start new search
+- **ESC** — Back to playback
+
+---
+
+## 🔍 Features in Detail
+
+### **YouTube Search**
+
+- Search songs, artists, or playlists
+- Shows title + duration
+- Up to 10 results
+
+### **Local Library**
+
+- Scans your `~/Music` directory
 - Supports: MP3, WAV, FLAC, M4A, OGG
-- Shows file duration
-- Directory navigation
+- Directory navigation + durations
 
-### Visualizer
+### **Visualizer**
+
 - Real-time animated bars
-- Responds to playback state
-- Automatically hides when idle
+- Reacts to audio
+- Auto-hides when idle
 
-## Troubleshooting
+---
 
-### "Failed to extract stream URL"
-Some YouTube videos may be age-restricted or region-locked. Try a different result.
+## 🛠️ Troubleshooting
 
-### No audio output
-Make sure `mpv` is installed and working:
+### **"Failed to extract stream URL"**
+
+Some YouTube videos may be restricted. Try another.
+
+### **No audio output**
+
+Check mpv:
+
 ```bash
 mpv --version
 ```
 
-### yt-dlp not found
-Update yt-dlp to the latest version:
+### **yt-dlp not found**
+
+Update it:
+
 ```bash
 sudo yt-dlp -U
 ```
 
-## License
+---
 
-MIT License - See LICENSE file for details
+## 📄 License
 
-## Credits
+MIT License — See LICENSE
 
-Built with:
-- [mpv](https://mpv.io/) - Media player
-- [ncurses](https://invisible-island.net/ncurses/) - Terminal UI
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube downloader
+---
+
+## 🙌 Credits
+
+- **mpv** — Media player
+- **ncurses** — Terminal UI
+- **yt-dlp** — YouTube downloader
+
