@@ -1,10 +1,10 @@
 #ifndef UI_HPP
 #define UI_HPP
-
+#pragma once
 #include "player.hpp"
-#include "search.hpp"
 #include "library.hpp"
-#include "utils.hpp"
+#include "search.hpp"
+#include "playlist_manager.hpp"
 #include <string>
 #include <vector>
 #include <ncurses.h>
@@ -15,6 +15,9 @@ enum class AppMode {
     LIBRARY_BROWSER,
     SEARCH_INPUT,
     SEARCH_RESULTS,
+    PLAYLIST_BROWSER,
+    PLAYLIST_VIEW,
+    PLAYLIST_SELECT_FOR_ADD,
     INTRO
 };
 
@@ -40,6 +43,7 @@ private:
 
     // State
     Library library;
+    PlaylistManager playlist_manager;
     std::vector<LibraryItem> library_items;
     std::vector<SearchResult> search_results;
 
@@ -47,13 +51,31 @@ private:
     int scroll_offset;
     std::string search_query;
     std::string current_path;
+    
+    std::vector<Playlist> playlists;
+    std::string current_playlist_name;
+    std::string playing_playlist_name;
+    std::vector<PlaylistSong> current_playlist_songs;
+    PlaylistSong song_to_add;
+    
+    std::string message;
+    std::chrono::steady_clock::time_point message_time;
+    
     std::string last_played_path;
+    
+    // Autoplay state
+    bool autoplay_enabled;
+    int playing_index;
+    bool is_playing_from_playlist;
 
     void draw();
     void draw_playback();
     void draw_library();
     void draw_search_input();
     void draw_search_results();
+    void draw_playlists();
+    void draw_playlist_view();
+    void draw_playlist_select_for_add();
     void draw_intro();
     
     void draw_borders(WINDOW* win, const std::string& title);
@@ -63,6 +85,9 @@ private:
     void handle_library_input(int ch);
     void handle_search_input_input(int ch);
     void handle_search_results_input(int ch);
+    void handle_playlists_input(int ch);
+    void handle_playlist_view_input(int ch);
+    void handle_playlist_select_for_add_input(int ch);
     void handle_intro_input(int ch);
 
 
@@ -70,11 +95,14 @@ private:
     void update_status();
     void update_help();
     
+    void play_next();
+    
     // Helper to create a window with a border
     WINDOW* create_window(int height, int width, int starty, int startx);
+    
+    // Helper for user input
+    std::string get_user_input(const std::string& prompt);
 
-    std::string message;
-    std::chrono::steady_clock::time_point message_time;
 };
 
 #endif // UI_HPP

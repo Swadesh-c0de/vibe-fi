@@ -1,4 +1,5 @@
 #include "ui.hpp"
+#include "utils.hpp"
 #include <ncurses.h>
 #include <cmath>
 #include <vector>
@@ -33,7 +34,11 @@ UI::UI(Player& p) : player(p), running(true), mode(AppMode::PLAYBACK), selection
     // Initialize library
     current_path = library.get_home_music_dir();
     library_items = library.list_directory(current_path);
-    library_items = library.list_directory(current_path);
+    
+    // Autoplay defaults
+    autoplay_enabled = true;
+    playing_index = -1;
+    is_playing_from_playlist = false;
 }
 
 UI::~UI() {
@@ -101,6 +106,11 @@ void UI::run() {
 
         draw();
         handle_input();
+        
+        // Autoplay check
+        if (autoplay_enabled && player.is_idle() && playing_index != -1) {
+            play_next();
+        }
     }
 }
 
@@ -115,6 +125,12 @@ void UI::draw() {
         draw_search_results();
     } else if (mode == AppMode::INTRO) {
         draw_intro();
+    } else if (mode == AppMode::PLAYLIST_BROWSER) {
+        draw_playlists();
+    } else if (mode == AppMode::PLAYLIST_VIEW) {
+        draw_playlist_view();
+    } else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD) {
+        draw_playlist_select_for_add();
     }
     
     update_status();
@@ -180,6 +196,41 @@ void UI::update_visualizer() {
     wrefresh(visualizer_win);
 }
 
+void UI::draw_playlist_select_for_add() {
+    werase(main_win);
+    draw_borders(main_win, "SELECT PLAYLIST TO ADD TO");
+    
+    int height, width;
+    getmaxyx(main_win, height, width);
+    
+    if (playlists.empty()) {
+        mvwprintw(main_win, height/2, 2, "No playlists found. Press [N] to create one.");
+    } else {
+        // Header
+        wattron(main_win, A_BOLD | A_UNDERLINE);
+        mvwprintw(main_win, 1, 2, "%-20s %10s", "Playlist Name", "Songs");
+        wattroff(main_win, A_BOLD | A_UNDERLINE);
+        
+        for (int i = 0; i < playlists.size(); ++i) {
+            int y = i + 2;
+            if (y >= height - 2) break;
+            
+            if (i == selection_index) wattron(main_win, COLOR_PAIR(6));
+            
+            std::string name = playlists[i].name;
+            if (name.length() > 20) name = name.substr(0, 17) + "...";
+            
+            mvwprintw(main_win, y, 2, "%-20s %10d", name.c_str(), playlists[i].song_count);
+            
+            if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
+        }
+    }
+    
+    // Always show the option to create new
+    mvwprintw(main_win, height - 2, 2, "Press [N] to create a new playlist");
+    wrefresh(main_win);
+}
+
 void UI::draw_library() {
     werase(main_win);
     draw_borders(main_win, "LIBRARY: " + current_path);
@@ -213,7 +264,33 @@ void UI::draw_library() {
 void UI::draw_search_input() {
     werase(main_win);
     draw_borders(main_win, "SEARCH YOUTUBE");
-    mvwprintw(main_win, 2, 2, "Enter Query: %s_", search_query.c_str());
+    
+    int height, width;
+    getmaxyx(main_win, height, width);
+    
+    std::string prompt = "What do you want to listen to?";
+    int prompt_x = (width - prompt.length()) / 2;
+    int prompt_y = height / 2 - 2;
+    
+    wattron(main_win, A_BOLD);
+    mvwprintw(main_win, prompt_y, prompt_x, "%s", prompt.c_str());
+    wattroff(main_win, A_BOLD);
+    
+    // Draw input box
+    int box_width = std::min(60, width - 4);
+    int box_x = (width - box_width) / 2;
+    int box_y = prompt_y + 2;
+    
+    mvwprintw(main_win, box_y, box_x - 2, "> ");
+    
+    wattron(main_win, COLOR_PAIR(6)); // Highlight background for input
+    mvwhline(main_win, box_y, box_x, ' ', box_width);
+    mvwprintw(main_win, box_y, box_x, "%s", search_query.c_str());
+    if (search_query.length() < box_width) {
+        waddch(main_win, '_'); // Cursor
+    }
+    wattroff(main_win, COLOR_PAIR(6));
+    
     wrefresh(main_win);
 }
 
@@ -225,16 +302,25 @@ void UI::draw_search_results() {
     getmaxyx(main_win, height, width);
     
     if (search_results.empty()) {
-        mvwprintw(main_win, 2, 2, "Searching...");
+        std::string msg = "Searching...";
+        mvwprintw(main_win, height/2, (width - msg.length())/2, "%s", msg.c_str());
     } else {
+        // Header
+        wattron(main_win, A_BOLD | A_UNDERLINE);
+        mvwprintw(main_win, 1, 2, "%-4s %-50s %10s", "#", "Title", "Duration");
+        wattroff(main_win, A_BOLD | A_UNDERLINE);
+        
         for (int i = 0; i < search_results.size(); ++i) {
+            int y = i + 2;
+            if (y >= height - 1) break;
+            
             if (i == selection_index) wattron(main_win, COLOR_PAIR(6));
-            std::string display_title = search_results[i].title;
-            if (!search_results[i].duration.empty()) {
-                display_title += " (" + search_results[i].duration + ")";
-            }
-            if (display_title.length() > width - 4) display_title = display_title.substr(0, width - 4);
-            mvwprintw(main_win, i + 1, 2, "%s", display_title.c_str());
+            
+            std::string title = search_results[i].title;
+            if (title.length() > 50) title = title.substr(0, 47) + "...";
+            
+            mvwprintw(main_win, y, 2, "%-4d %-50s %10s", i + 1, title.c_str(), search_results[i].duration.c_str());
+            
             if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
         }
     }
@@ -260,8 +346,12 @@ void UI::update_status() {
         }
     }
     
+    // Center Title
+    if (title.length() > width - 4) title = title.substr(0, width - 7) + "...";
+    int title_x = (width - title.length()) / 2;
+    
     wattron(status_win, COLOR_PAIR(1) | A_BOLD);
-    mvwprintw(status_win, 1, 2, "Track: %.50s", title.c_str());
+    mvwprintw(status_win, 1, title_x, "%s", title.c_str());
     wattroff(status_win, COLOR_PAIR(1) | A_BOLD);
     
     double pos = player.get_position();
@@ -273,7 +363,7 @@ void UI::update_status() {
         mvwprintw(status_win, 2, 2, "[");
         wattron(status_win, COLOR_PAIR(2));
         for (int i = 0; i < bar_width - 2; ++i) {
-            waddch(status_win, i < filled ? '=' : '-');
+            waddch(status_win, i < filled ? '=' : ' ');
         }
         wattroff(status_win, COLOR_PAIR(2));
         wprintw(status_win, "]");
@@ -286,7 +376,8 @@ void UI::update_status() {
         mvwprintw(status_win, 3, 2, "%02d:%02d / %02d:%02d", min_pos, sec_pos, min_dur, sec_dur);
     }
     
-    mvwprintw(status_win, 3, width - 15, "Vol: %d%%", player.get_volume());
+    std::string vol_str = "Vol: " + std::to_string(player.get_volume()) + "%";
+    mvwprintw(status_win, 3, width - vol_str.length() - 2, "%s", vol_str.c_str());
     wrefresh(status_win);
 }
 
@@ -299,14 +390,22 @@ void UI::update_help() {
         wattroff(help_win, COLOR_PAIR(4) | A_BOLD);
     } else {
         wattron(help_win, COLOR_PAIR(4));
-        if (mode == AppMode::PLAYBACK)
-            mvwprintw(help_win, 1, 2, "[SPACE] Play/Pause [Q] Queue [L] Library [S] Search [R] Replay");
+        if (mode == AppMode::PLAYBACK) {
+             std::string auto_str = autoplay_enabled ? "ON" : "OFF";
+             mvwprintw(help_win, 1, 2, "[ESC] Quit [SPACE] Pause [Q] Queue [L] Library [S] Search [P] Playlist [R] Replay [O] Autoplay:%s", auto_str.c_str());
+        }
         else if (mode == AppMode::LIBRARY_BROWSER)
              mvwprintw(help_win, 1, 2, "[ENTER] Select [BKSP] Up [ESC] Back");
         else if (mode == AppMode::SEARCH_INPUT)
              mvwprintw(help_win, 1, 2, "[ENTER] Search [ESC] Cancel");
         else if (mode == AppMode::SEARCH_RESULTS)
-             mvwprintw(help_win, 1, 2, "[ENTER] Play [S] New Search [ESC] Back");
+             mvwprintw(help_win, 1, 2, "[ENTER] Play [A] Add to Playlist [S] New Search [ESC] Back");
+        else if (mode == AppMode::PLAYLIST_BROWSER)
+             mvwprintw(help_win, 1, 2, "[ENTER] View [N] New Playlist [D] Delete [ESC] Back");
+        else if (mode == AppMode::PLAYLIST_VIEW)
+             mvwprintw(help_win, 1, 2, "[ENTER] Play [D] Remove [ESC] Back");
+        else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD)
+             mvwprintw(help_win, 1, 2, "[ENTER] Select [N] New Playlist [ESC] Cancel");
         else
              mvwprintw(help_win, 1, 2, "[ENTER] Play [ESC] Back");
         
@@ -332,6 +431,9 @@ void UI::handle_input() {
         else if (mode == AppMode::LIBRARY_BROWSER) handle_library_input(ch);
         else if (mode == AppMode::SEARCH_INPUT) handle_search_input_input(ch);
         else if (mode == AppMode::SEARCH_RESULTS) handle_search_results_input(ch);
+        else if (mode == AppMode::PLAYLIST_BROWSER) handle_playlists_input(ch);
+        else if (mode == AppMode::PLAYLIST_VIEW) handle_playlist_view_input(ch);
+        else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD) handle_playlist_select_for_add_input(ch);
         else if (mode == AppMode::INTRO) handle_intro_input(ch);
     } catch (const std::exception& e) {
         show_message(std::string("Error: ") + e.what());
@@ -343,10 +445,18 @@ void UI::handle_playback_input(int ch) {
         case 27: running = false; break;
         case ' ': player.toggle_pause(); break;
         case 'l': set_mode(AppMode::LIBRARY_BROWSER); break;
+
         case 's': search_query = ""; set_mode(AppMode::SEARCH_INPUT); break;
         case 'q': case 'Q':
-            if (!search_results.empty()) {
+            if (!playing_playlist_name.empty()) {
+                current_playlist_name = playing_playlist_name;
+                current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
+                selection_index = 0; // Or try to find the current song index?
+                set_mode(AppMode::PLAYLIST_VIEW);
+            } else if (!search_results.empty()) {
                 set_mode(AppMode::SEARCH_RESULTS);
+            } else {
+                show_message("Not playing from a playlist.");
             }
             break;
         case 'r': case 'R': 
@@ -360,6 +470,14 @@ void UI::handle_playback_input(int ch) {
         case KEY_RIGHT: player.seek(5.0); break;
         case '+': case '=': player.set_volume(player.get_volume() + 5); break;
         case '-': case '_': player.set_volume(player.get_volume() - 5); break;
+        case 'o': case 'O': 
+            autoplay_enabled = !autoplay_enabled; 
+            show_message(std::string("Autoplay: ") + (autoplay_enabled ? "ON" : "OFF"));
+            break;
+        case 'p': case 'P':
+            playlists = playlist_manager.list_playlists();
+            set_mode(AppMode::PLAYLIST_BROWSER);
+            break;
     }
 }
 
@@ -439,8 +557,6 @@ void UI::handle_search_results_input(int ch) {
         case 10: // Enter
             if (!search_results.empty()) {
                 show_message("Resolving...");
-                // Force a quick draw to show the message? 
-                // ncurses doesn't update until next loop usually, but we can try wrefresh
                 wrefresh(help_win); 
                 
                 try {
@@ -448,14 +564,207 @@ void UI::handle_search_results_input(int ch) {
                     player.load(stream_url);
                     last_played_path = stream_url;
                     player.set_property("force-media-title", search_results[selection_index].title);
+                    
+                    // Set autoplay context
+                    playing_index = selection_index;
+                    is_playing_from_playlist = false;
+                    
                     player.play();
                     set_mode(AppMode::PLAYBACK);
                 } catch (const std::exception& e) {
-                    // Stay in search results, just show error
                     show_message(std::string("Cannot play: ") + e.what());
                 }
             }
             break;
+        case 'a': case 'A':
+            if (!search_results.empty()) {
+                song_to_add.title = search_results[selection_index].title;
+                song_to_add.url = search_results[selection_index].url;
+                song_to_add.duration = search_results[selection_index].duration;
+                
+                playlists = playlist_manager.list_playlists();
+                // Always allow entering selection mode so user can create new playlist
+                selection_index = 0;
+                set_mode(AppMode::PLAYLIST_SELECT_FOR_ADD);
+            }
+            break;
+    }
+}
+
+void UI::draw_playlists() {
+    werase(main_win);
+    draw_borders(main_win, "PLAYLISTS");
+    
+    int height, width;
+    getmaxyx(main_win, height, width);
+    
+    if (playlists.empty()) {
+        mvwprintw(main_win, height/2, 2, "No playlists found. Press [N] to create one.");
+    } else {
+        // Header
+        wattron(main_win, A_BOLD | A_UNDERLINE);
+        mvwprintw(main_win, 1, 2, "%-20s %10s", "Playlist Name", "Songs");
+        wattroff(main_win, A_BOLD | A_UNDERLINE);
+        
+        for (int i = 0; i < playlists.size(); ++i) {
+            int y = i + 2;
+            if (y >= height - 1) break;
+            
+            if (i == selection_index) wattron(main_win, COLOR_PAIR(6));
+            
+            std::string name = playlists[i].name;
+            if (name.length() > 20) name = name.substr(0, 17) + "...";
+            
+            mvwprintw(main_win, y, 2, "%-20s %10d", name.c_str(), playlists[i].song_count);
+            
+            if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
+        }
+    }
+    wrefresh(main_win);
+}
+
+void UI::draw_playlist_view() {
+    werase(main_win);
+    draw_borders(main_win, "PLAYLIST: " + current_playlist_name);
+    
+    int height, width;
+    getmaxyx(main_win, height, width);
+    
+    if (current_playlist_songs.empty()) {
+        mvwprintw(main_win, height/2, 2, "Playlist is empty.");
+    } else {
+        // Header
+        wattron(main_win, A_BOLD | A_UNDERLINE);
+        mvwprintw(main_win, 1, 2, "%-4s %-50s %10s", "#", "Title", "Duration");
+        wattroff(main_win, A_BOLD | A_UNDERLINE);
+        
+        for (int i = 0; i < current_playlist_songs.size(); ++i) {
+            int y = i + 2;
+            if (y >= height - 1) break;
+            
+            if (i == selection_index) wattron(main_win, COLOR_PAIR(6));
+            
+            std::string title = current_playlist_songs[i].title;
+            if (title.length() > 50) title = title.substr(0, 47) + "...";
+            
+            mvwprintw(main_win, y, 2, "%-4d %-50s %10s", i + 1, title.c_str(), current_playlist_songs[i].duration.c_str());
+            
+            if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
+        }
+    }
+    wrefresh(main_win);
+}
+
+void UI::handle_playlists_input(int ch) {
+    switch (ch) {
+        case 27: set_mode(AppMode::PLAYBACK); break;
+        case KEY_UP: if (selection_index > 0) selection_index--; break;
+        case KEY_DOWN: if (selection_index < playlists.size() - 1) selection_index++; break;
+        case 'n': case 'N': {
+            std::string name = get_user_input("New Playlist Name");
+            
+            if (name.length() > 0) {
+                if (playlist_manager.create_playlist(name)) {
+                    playlists = playlist_manager.list_playlists();
+                    show_message("Playlist created.");
+                } else {
+                    show_message("Playlist already exists.");
+                }
+            }
+            break;
+        }
+        case 'd': case 'D':
+            if (!playlists.empty()) {
+                playlist_manager.delete_playlist(playlists[selection_index].name);
+                playlists = playlist_manager.list_playlists();
+                if (selection_index >= playlists.size() && selection_index > 0) selection_index--;
+                show_message("Playlist deleted.");
+            }
+            break;
+        case 10: // Enter
+            if (!playlists.empty()) {
+                current_playlist_name = playlists[selection_index].name;
+                current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
+                selection_index = 0;
+                set_mode(AppMode::PLAYLIST_VIEW);
+            }
+            break;
+    }
+}
+
+void UI::handle_playlist_view_input(int ch) {
+    switch (ch) {
+        case 27: 
+            playlists = playlist_manager.list_playlists();
+            set_mode(AppMode::PLAYLIST_BROWSER); 
+            break;
+        case KEY_UP: if (selection_index > 0) selection_index--; break;
+        case KEY_DOWN: if (selection_index < current_playlist_songs.size() - 1) selection_index++; break;
+        case 'd': case 'D':
+            if (!current_playlist_songs.empty()) {
+                playlist_manager.remove_song_from_playlist(current_playlist_name, selection_index);
+                current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
+                if (selection_index >= current_playlist_songs.size() && selection_index > 0) selection_index--;
+                show_message("Song removed.");
+            }
+            break;
+        case 10: // Enter
+            if (!current_playlist_songs.empty()) {
+                show_message("Resolving...");
+                wrefresh(help_win);
+                try {
+                    std::string stream_url = get_youtube_stream_url(current_playlist_songs[selection_index].url);
+                    player.load(stream_url);
+                    last_played_path = stream_url;
+                    player.set_property("force-media-title", current_playlist_songs[selection_index].title);
+                    playing_playlist_name = current_playlist_name;
+                    
+                    // Set autoplay context
+                    playing_index = selection_index;
+                    is_playing_from_playlist = true;
+                    
+                    player.play();
+                    set_mode(AppMode::PLAYBACK);
+                } catch (const std::exception& e) {
+                    show_message(std::string("Cannot play: ") + e.what());
+                }
+            }
+            break;
+    }
+}
+void UI::handle_playlist_select_for_add_input(int ch) {
+    switch (ch) {
+        case 27: 
+            set_mode(AppMode::SEARCH_RESULTS); 
+            break;
+        case KEY_UP: if (selection_index > 0) selection_index--; break;
+        case KEY_DOWN: if (selection_index < playlists.size() - 1) selection_index++; break;
+        case 10: // Enter
+            if (!playlists.empty()) {
+                if (playlist_manager.add_song_to_playlist(playlists[selection_index].name, song_to_add)) {
+                    show_message("Song added to " + playlists[selection_index].name);
+                    set_mode(AppMode::SEARCH_RESULTS);
+                } else {
+                    show_message("Song already in playlist.");
+                }
+            }
+            break;
+        case 'n': case 'N': {
+            std::string name = get_user_input("New Playlist Name");
+            
+            if (name.length() > 0) {
+                if (playlist_manager.create_playlist(name)) {
+                    playlists = playlist_manager.list_playlists();
+                    show_message("Playlist created.");
+                    // Auto-select the new playlist
+                    selection_index = playlists.size() - 1;
+                } else {
+                    show_message("Playlist already exists.");
+                }
+            }
+            draw_playlist_select_for_add();
+            break;
+        }
     }
 }
 
@@ -487,7 +796,7 @@ void UI::draw_intro() {
     std::string welcome = "Welcome to Vibe-Fi";
     mvwprintw(main_win, start_y + ascii_art.size() + 2, (width - welcome.length()) / 2, "%s", welcome.c_str());
     
-    std::string instruction = "Press [L] Library  [S] Search  [ESC] Quit";
+    std::string instruction = "Press [L] Library  [S] Search  [P] Playlists  [ESC] Quit";
     mvwprintw(main_win, start_y + ascii_art.size() + 4, (width - instruction.length()) / 2, "%s", instruction.c_str());
     
     wrefresh(main_win);
@@ -501,8 +810,112 @@ void UI::handle_intro_input(int ch) {
     } else if (ch == 's' || ch == 'S') {
         search_query = "";
         set_mode(AppMode::SEARCH_INPUT);
+    } else if (ch == 'p' || ch == 'P') {
+        playlists = playlist_manager.list_playlists();
+        set_mode(AppMode::PLAYLIST_BROWSER);
     } else if (ch == 27 || ch == 'q' || ch == 'Q') { // ESC or Q
         running = false;
     }
+}
+
+void UI::play_next() {
+    if (playing_index == -1) return;
+    
+    int next_index = playing_index + 1;
+    std::string next_url;
+    std::string next_title;
+    
+    if (is_playing_from_playlist) {
+        if (next_index < current_playlist_songs.size()) {
+            next_url = current_playlist_songs[next_index].url;
+            next_title = current_playlist_songs[next_index].title;
+        } else {
+            // End of playlist
+            playing_index = -1;
+            show_message("End of playlist.");
+            return;
+        }
+    } else {
+        if (next_index < search_results.size()) {
+            next_url = search_results[next_index].url;
+            next_title = search_results[next_index].title;
+        } else {
+            // End of search results
+            playing_index = -1;
+            show_message("End of results.");
+            return;
+        }
+    }
+    
+    try {
+        show_message("Autoplaying next: " + next_title);
+        wrefresh(help_win);
+        
+        std::string stream_url = get_youtube_stream_url(next_url);
+        player.load(stream_url);
+        last_played_path = stream_url;
+        player.set_property("force-media-title", next_title);
+        player.play();
+        
+        playing_index = next_index;
+    } catch (const std::exception& e) {
+        show_message("Autoplay failed: " + std::string(e.what()));
+        playing_index = -1; // Stop autoplay on error
+    }
+}
+
+std::string UI::get_user_input(const std::string& prompt) {
+    int height, width;
+    getmaxyx(stdscr, height, width);
+    
+    int win_h = 5;
+    int win_w = 40;
+    int start_y = (height - win_h) / 2;
+    int start_x = (width - win_w) / 2;
+    
+    WINDOW* input_win = newwin(win_h, win_w, start_y, start_x);
+    wbkgd(input_win, COLOR_PAIR(1)); 
+    box(input_win, 0, 0);
+    
+    mvwprintw(input_win, 0, 2, " %s ", prompt.c_str());
+    mvwprintw(input_win, 2, 2, "> ");
+    wrefresh(input_win);
+    
+    curs_set(1);
+    std::string input;
+    int ch;
+    
+    while (true) {
+        ch = wgetch(input_win);
+        if (ch == 27) { // ESC
+            input = ""; // Cancel
+            break;
+        } else if (ch == 10) { // Enter
+            break;
+        } else if (ch == KEY_BACKSPACE || ch == 127) {
+            if (!input.empty()) {
+                input.pop_back();
+                mvwprintw(input_win, 2, 4, "%s ", input.c_str()); // Clear last char
+                wmove(input_win, 2, 4 + input.length());
+                wrefresh(input_win);
+            }
+        } else if (isprint(ch)) {
+            if (input.length() < win_w - 6) {
+                input += (char)ch;
+                mvwprintw(input_win, 2, 4, "%s", input.c_str());
+                wrefresh(input_win);
+            }
+        }
+    }
+    
+    curs_set(0);
+    delwin(input_win);
+    
+    // Force full redraw after popup
+    clear();
+    refresh();
+    draw(); 
+    
+    return input;
 }
 

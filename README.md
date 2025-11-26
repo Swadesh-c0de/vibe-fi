@@ -1,39 +1,23 @@
 # Vibe-Fi 🎵
 
-A beautiful terminal-based music player with YouTube search, local library browsing, and a retro visualizer.
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)
+![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
 
----
-
-## 📸 UI Preview
-
-
-### **Intro Screen**
-
-![](images/Intro.png)
-
-### **Library Browser**
-
-![](images/Library.png)
-
-### **YouTube Search Results**
-
-![](images/Search.png)
-
-### **Playback + Visualizer**
-
-![](images/VibeFi.png)
+**Vibe-Fi** is a premium, terminal-based music player designed for the modern developer. It seamlessly integrates YouTube search, local library management, and a retro-futuristic visualizer into a high-performance TUI experience.
 
 ---
 
 ## ✨ Features
 
-- **Modern TUI Design** – Clean interface with borders, colors, and smooth navigation
-- **YouTube Integration** – Search and play music directly from YouTube
-- **Local Library** – Browse and play your local music collection
-- **Live Visualizer** – Animated audio visualizer bars
-- **Queue Management** – Navigate between search results and playback
-- **Replay Function** – Quickly replay the last played track
-- **Intuitive Controls** – Keyboard-driven interface
+- **YouTube Integration**: Search and stream high-quality audio directly from YouTube.
+- **Local Library**: Browse and play your local music collection with ease.
+- **Playlist Management**: Create, manage, and play custom playlists.
+    - **Duplicate Prevention**: Smartly prevents duplicate songs and playlist names.
+    - **Contextual Navigation**: Jump back to your current playlist or search results instantly.
+- **Autoplay**: Automatically plays the next song from your playlist or search results.
+- **Live Visualizer**: A responsive, retro-style audio visualizer that reacts to your music.
+- **Modern TUI**: A polished, keyboard-driven interface with centered dialogs and intuitive navigation.
 
 ---
 
@@ -51,43 +35,18 @@ chmod +x install.sh
 ```
 
 **Supported Systems:**
-
 - ✅ Arch Linux (and derivatives)
 - ✅ Ubuntu/Debian (and derivatives)
-- ✅ macOS (requires Homebrew)
+- ✅ macOS (Apple Silicon & Intel)
 
----
+### Manual Installation
 
-## 📦 Manual Installation
+**Dependencies:**
+- `cmake`, `make`, `g++`
+- `libmpv-dev`, `libncurses-dev`
+- `mpv`, `yt-dlp`, `ffmpeg`
 
-### Dependencies
-
-- **Build tools:** `cmake`, `make`, `g++`
-- **Libraries:** `libmpv-dev`, `libncurses-dev`
-- **Runtime:** `mpv`, `yt-dlp`, `ffmpeg`
-
-### Arch Linux
-
-```bash
-sudo pacman -S base-devel cmake mpv ncurses yt-dlp ffmpeg
-```
-
-### Ubuntu/Debian
-
-```bash
-sudo apt install build-essential cmake libmpv-dev libncurses-dev mpv ffmpeg
-# Install yt-dlp
-sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
-sudo chmod a+rx /usr/local/bin/yt-dlp
-```
-
-### macOS
-
-```bash
-brew install cmake mpv ncurses yt-dlp ffmpeg pkg-config
-```
-
-### Build
+**Build Instructions:**
 
 ```bash
 mkdir build && cd build
@@ -100,112 +59,65 @@ sudo cp vibe_fi /usr/local/bin/vibe
 
 ## 🎧 Usage
 
+Start the application from your terminal:
+
 ```bash
 vibe
 ```
 
-The app starts with an intro screen. From there:
+### ⌨️ Keybindings
 
----
+#### **Global**
+- **ESC**: Quit application / Back / Cancel
+- **Arrow Keys**: Navigate lists
 
-## ⌨️ Controls
+#### **Intro Screen**
+- **L**: Go to Library
+- **S**: Search YouTube
+- **P**: Browse Playlists
+- **Q**: Quit
 
-### **Global**
+#### **Playback Mode**
+- **SPACE**: Play/Pause
+- **Q**: Return to current queue (Playlist/Search Results)
+- **O**: Toggle Autoplay (ON/OFF)
+- **L**: Go to Library
+- **S**: New Search
+- **P**: Go to Playlists
+- **R**: Replay last track
+- **←/→**: Seek backward/forward (5s)
+- **+/-**: Volume up/down
 
-- **ESC** — Quit application
-- **Arrow Keys** — Navigate lists
+#### **Search Results & Playlists**
+- **ENTER**: Play selected track
+- **A**: Add to Playlist
+- **S**: Start new search
+- **ESC**: Back
 
-### **Intro Screen**
-
-- **L** — Go to Library
-- **S** — Search YouTube
-- **Q** — Quit
-
-### **Playback Mode**
-
-- **SPACE** — Play/Pause
-- **Q** — Return to search results queue
-- **L** — Go to Library
-- **S** — New search
-- **R** — Replay last track
-- **←/→** — Seek backward/forward (5s)
-- **+/-** — Volume up/down
-
-### **Library Browser**
-
-- **ENTER** — Play file or enter directory
-- **BACKSPACE** — Go up one directory
-- **ESC** — Back to playback
-
-### **Search**
-
-- **Type** — Enter search query
-- **ENTER** — Execute search
-- **ESC** — Cancel
-
-### **Search Results**
-
-- **ENTER** — Play selected track
-- **S** — Start new search
-- **ESC** — Back to playback
-
----
-
-## 🔍 Features in Detail
-
-### **YouTube Search**
-
-- Search songs, artists, or playlists
-- Shows title + duration
-- Up to 10 results
-
-### **Local Library**
-
-- Scans your `~/Music` directory
-- Supports: MP3, WAV, FLAC, M4A, OGG
-- Directory navigation + durations
-
-### **Visualizer**
-
-- Real-time animated bars
-- Reacts to audio
-- Auto-hides when idle
+#### **Playlist Management**
+- **N**: Create New Playlist (from "Add to Playlist" or Browser)
+- **D**: Delete Playlist / Remove Song
+- **ENTER**: Select / Play
 
 ---
 
 ## 🛠️ Troubleshooting
 
-### **"Failed to extract stream URL"**
-
-Some YouTube videos may be restricted. Try another.
-
-### **No audio output**
-
-Check mpv:
-
-```bash
-mpv --version
-```
-
-### **yt-dlp not found**
-
-Update it:
-
-```bash
-sudo yt-dlp -U
-```
+- **"Failed to extract stream URL"**: Some YouTube videos may be restricted. Try another result.
+- **No audio**: Ensure `mpv` is installed and working correctly (`mpv --version`).
+- **yt-dlp errors**: Update to the latest version: `sudo yt-dlp -U`.
 
 ---
 
 ## 📄 License
 
-MIT License — See LICENSE
+MIT License — See [LICENSE](LICENSE) for details.
 
 ---
 
 ## 🙌 Credits
 
-- **mpv** — Media player
-- **ncurses** — Terminal UI
-- **yt-dlp** — YouTube downloader
-
+Built with ❤️ using:
+- **[libmpv](https://mpv.io/)** - Powerful media playback core.
+- **[ncurses](https://invisible-island.net/ncurses/)** - Robust terminal UI framework.
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - Reliable YouTube media extraction.
