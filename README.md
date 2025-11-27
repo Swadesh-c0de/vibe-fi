@@ -4,7 +4,7 @@
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
 
-**Vibe-Fi** is a premium, terminal-based music player designed for the modern developer. It seamlessly integrates YouTube search, local library management, and a retro-futuristic visualizer into a high-performance TUI experience.
+**Vibe-Fi** is a asthetic terminal-based music player designed for the modern developer. It seamlessly integrates YouTube search, local library management, and a retro-futuristic visualizer into a high-performance TUI experience.
 
 ---
 
