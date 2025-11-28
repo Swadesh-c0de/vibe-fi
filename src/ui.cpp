@@ -10,7 +10,7 @@
 
 namespace fs = std::filesystem;
 
-UI::UI(Player& p) : player(p), running(true), mode(AppMode::PLAYBACK), selection_index(0), scroll_offset(0) {
+UI::UI(Player& p) : player(p), running(true), mode(AppMode::PLAYBACK), selection_index(0), scroll_offset(0), lyrics_scroll_offset(0), lyrics_auto_scroll(true) {
     initscr();
     cbreak();
     noecho();
@@ -42,6 +42,7 @@ UI::UI(Player& p) : player(p), running(true), mode(AppMode::PLAYBACK), selection
 }
 
 UI::~UI() {
+    if (lyrics_win) delwin(lyrics_win);
     if (visualizer_win) delwin(visualizer_win);
     if (status_win) delwin(status_win);
     if (help_win) delwin(help_win);
@@ -81,8 +82,13 @@ void UI::run() {
     int status_h = 5;
     int main_h = height - status_h - help_h;
     
-    visualizer_win = create_window(main_h, width, 0, 0); // Reused as main view area
-    main_win = create_window(main_h, width, 0, 0);       // Overlaps with visualizer
+    // Split main area: Top 40% for visualizer, Bottom 60% for lyrics
+    int viz_h = static_cast<int>(main_h * 0.4);
+    int lyrics_h = main_h - viz_h;
+
+    visualizer_win = create_window(viz_h, width, 0, 0); 
+    lyrics_win = create_window(lyrics_h, width, viz_h, 0);
+    main_win = create_window(main_h, width, 0, 0);       // Overlaps, used for other modes
     status_win = create_window(status_h, width, main_h, 0);
     help_win = create_window(help_h, width, main_h + status_h, 0);
 
@@ -94,7 +100,13 @@ void UI::run() {
             height = new_h;
             width = new_w;
             main_h = height - status_h - help_h;
-            wresize(visualizer_win, main_h, width);
+            int viz_h = static_cast<int>(main_h * 0.4);
+            int lyrics_h = main_h - viz_h;
+            
+            wresize(visualizer_win, viz_h, width);
+            wresize(lyrics_win, lyrics_h, width);
+            mvwin(lyrics_win, viz_h, 0);
+            
             wresize(main_win, main_h, width);
             wresize(status_win, status_h, width);
             mvwin(status_win, main_h, 0);
@@ -131,6 +143,8 @@ void UI::draw() {
         draw_playlist_view();
     } else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD) {
         draw_playlist_select_for_add();
+    } else if (mode == AppMode::LYRICS_VIEW) {
+        draw_lyrics();
     }
     
     update_status();
@@ -139,11 +153,12 @@ void UI::draw() {
 
 void UI::draw_playback() {
     update_visualizer();
+    draw_lyrics(); // Draw lyrics in the bottom window
 }
 
 void UI::update_visualizer() {
     werase(visualizer_win);
-    draw_borders(visualizer_win, "VIBE-FI VISUALIZER");
+    draw_borders(visualizer_win, "VISUALIZER");
     
     int height, width;
     getmaxyx(visualizer_win, height, width);
@@ -151,47 +166,62 @@ void UI::update_visualizer() {
     // Inner drawing area
     int draw_h = height - 2;
     int draw_w = width - 2;
-    int bar_width = 3; // Wider bars
+    int bar_width = 2; 
     int num_bars = draw_w / bar_width;
     
     static std::vector<int> bars(num_bars, 0);
+    if (bars.size() != num_bars) bars.resize(num_bars, 0);
     
-    for (int i = 0; i < num_bars; ++i) {
+    // Symmetric Visualizer Logic
+    // We calculate half the bars and mirror them
+    int half_bars = num_bars / 2;
+    
+    for (int i = 0; i < half_bars; ++i) {
         if (player.is_playing() && !player.is_paused() && !player.is_idle()) {
-            // Reduce max height to 60% of available space for a cleaner look
-            int max_h = static_cast<int>(draw_h * 0.6);
-            if (max_h < 1) max_h = 1;
-            
+            int max_h = draw_h;
             int target = rand() % max_h;
-            if (bars[i] < target) bars[i] += 2;
+            
+            // Smooth transition
+            if (bars[i] < target) bars[i] += 1;
             else if (bars[i] > target) bars[i] -= 1;
+            
             if (bars[i] < 0) bars[i] = 0;
             if (bars[i] >= draw_h) bars[i] = draw_h - 1;
         } else {
             if (bars[i] > 0) bars[i]--;
         }
+        // Mirror
+        bars[num_bars - 1 - i] = bars[i];
     }
     
-    wattron(visualizer_win, COLOR_PAIR(3));
-    int center_y = height / 2;
+    // Center bar (if odd)
+    if (num_bars % 2 != 0) {
+        int center = num_bars / 2;
+        if (player.is_playing() && !player.is_paused() && !player.is_idle()) {
+             int target = rand() % draw_h;
+             if (bars[center] < target) bars[center] += 1;
+             else if (bars[center] > target) bars[center] -= 1;
+        } else {
+             if (bars[center] > 0) bars[center]--;
+        }
+    }
+    
+    wattron(visualizer_win, COLOR_PAIR(3) | A_BOLD);
     for (int i = 0; i < num_bars; ++i) {
         int bar_height = bars[i];
-        int half_height = bar_height / 2;
         
-        int start_y = center_y - half_height;
-        int end_y = center_y + half_height;
-        
-        // Clamp to avoid drawing over borders
-        if (start_y < 1) start_y = 1;
-        if (end_y > height - 2) end_y = height - 2;
-        
-        for (int y = start_y; y <= end_y; ++y) {
-            for (int k = 0; k < bar_width - 1; ++k) {
-                 mvwaddch(visualizer_win, y, (i * bar_width) + 1 + k, ACS_CKBOARD); 
+        // Draw from bottom up
+        for (int y = 0; y < bar_height; ++y) {
+            int draw_y = height - 2 - y;
+            for (int k = 0; k < bar_width; ++k) {
+                 // Use block characters for cleaner look if terminal supports, 
+                 // but for ncurses safety stick to simple chars or ACS
+                 // ACS_BLOCK is often solid
+                 mvwaddch(visualizer_win, draw_y, (i * bar_width) + 1 + k, ACS_CKBOARD); 
             }
         }
     }
-    wattroff(visualizer_win, COLOR_PAIR(3));
+    wattroff(visualizer_win, COLOR_PAIR(3) | A_BOLD);
     
     wrefresh(visualizer_win);
 }
@@ -406,6 +436,8 @@ void UI::update_help() {
              mvwprintw(help_win, 1, 2, "[ENTER] Play [D] Remove [ESC] Back");
         else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD)
              mvwprintw(help_win, 1, 2, "[ENTER] Select [N] New Playlist [ESC] Cancel");
+        else if (mode == AppMode::LYRICS_VIEW)
+             mvwprintw(help_win, 1, 2, "[UP/DOWN] Scroll [ESC] Back");
         else
              mvwprintw(help_win, 1, 2, "[ENTER] Play [ESC] Back");
         
@@ -434,6 +466,7 @@ void UI::handle_input() {
         else if (mode == AppMode::PLAYLIST_BROWSER) handle_playlists_input(ch);
         else if (mode == AppMode::PLAYLIST_VIEW) handle_playlist_view_input(ch);
         else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD) handle_playlist_select_for_add_input(ch);
+        else if (mode == AppMode::LYRICS_VIEW) handle_lyrics_input(ch);
         else if (mode == AppMode::INTRO) handle_intro_input(ch);
     } catch (const std::exception& e) {
         show_message(std::string("Error: ") + e.what());
@@ -478,6 +511,15 @@ void UI::handle_playback_input(int ch) {
             playlists = playlist_manager.list_playlists();
             set_mode(AppMode::PLAYLIST_BROWSER);
             break;
+
+        case KEY_UP: 
+            if (lyrics_scroll_offset > 0) lyrics_scroll_offset--; 
+            // lyrics_auto_scroll = false; // Always on
+            break;
+        case KEY_DOWN: 
+            lyrics_scroll_offset++; 
+            // lyrics_auto_scroll = false; // Always on
+            break;
     }
 }
 
@@ -514,9 +556,11 @@ void UI::handle_library_input(int ch) {
                 library_items = library.list_directory(current_path);
                 selection_index = 0; scroll_offset = 0;
             } else {
+                player.stop(); // Stop current playback
+                fetch_current_lyrics(item.path); // Fetch BEFORE loading/playing
                 player.load(item.path);
                 last_played_path = item.path;
-                player.set_property("force-media-title", "");
+                player.set_property("force-media-title", item.path); 
                 player.play();
                 set_mode(AppMode::PLAYBACK);
             }
@@ -560,10 +604,18 @@ void UI::handle_search_results_input(int ch) {
                 wrefresh(help_win); 
                 
                 try {
+                    player.stop(); // Stop current playback
+                    show_message("Resolving stream...");
+                    wrefresh(help_win);
                     std::string stream_url = get_youtube_stream_url(search_results[selection_index].url);
+                    
+                    fetch_current_lyrics(search_results[selection_index].title); // Fetch BEFORE loading/playing
+                    
                     player.load(stream_url);
                     last_played_path = stream_url;
                     player.set_property("force-media-title", search_results[selection_index].title);
+                    
+                    // Set autoplay context
                     
                     // Set autoplay context
                     playing_index = selection_index;
@@ -713,6 +765,9 @@ void UI::handle_playlist_view_input(int ch) {
                 show_message("Resolving...");
                 wrefresh(help_win);
                 try {
+                    player.stop(); // Stop current playback
+                    fetch_current_lyrics(current_playlist_songs[selection_index].title); // Fetch BEFORE loading/playing
+                    
                     std::string stream_url = get_youtube_stream_url(current_playlist_songs[selection_index].url);
                     player.load(stream_url);
                     last_played_path = stream_url;
@@ -802,6 +857,148 @@ void UI::draw_intro() {
     wrefresh(main_win);
 }
 
+void UI::draw_lyrics() {
+    // Determine target window based on mode
+    WINDOW* target_win = (mode == AppMode::LYRICS_VIEW) ? main_win : lyrics_win;
+    
+    werase(target_win);
+    draw_borders(target_win, "LYRICS");
+    
+    int height, width;
+    getmaxyx(target_win, height, width);
+    int text_h = height - 2;
+    int text_w = width - 4;
+    
+    if (current_lyrics_data.has_synced) {
+        // Synced Lyrics Logic
+        double current_time = player.get_position();
+        int active_index = -1;
+        
+        // Find active line
+        for (int i = 0; i < current_lyrics_data.synced_lyrics.size(); ++i) {
+            if (current_lyrics_data.synced_lyrics[i].timestamp <= current_time) {
+                active_index = i;
+            } else {
+                break;
+            }
+        }
+        
+        // Auto-scroll
+        if (lyrics_auto_scroll && active_index != -1) {
+            // Try to center the active line
+            int target_offset = active_index - (text_h / 2);
+            if (target_offset < 0) target_offset = 0;
+            lyrics_scroll_offset = target_offset;
+        }
+        
+        // Draw lines
+        for (int i = 0; i < text_h; ++i) {
+            int idx = i + lyrics_scroll_offset;
+            if (idx >= current_lyrics_data.synced_lyrics.size()) break;
+            
+            if (idx == active_index) {
+                wattron(target_win, A_BOLD | COLOR_PAIR(2)); // Highlight active line
+                std::string line = "> " + current_lyrics_data.synced_lyrics[idx].text;
+                int start_x = (width - line.length()) / 2;
+                if (start_x < 0) start_x = 0;
+                mvwprintw(target_win, i + 1, start_x, "%s", line.c_str());
+                wattroff(target_win, A_BOLD | COLOR_PAIR(2));
+            } else {
+                std::string line = current_lyrics_data.synced_lyrics[idx].text;
+                int start_x = (width - line.length()) / 2;
+                if (start_x < 0) start_x = 0;
+                mvwprintw(target_win, i + 1, start_x, "%s", line.c_str());
+            }
+        }
+        
+    } else {
+        // Plain Lyrics Logic (Fallback)
+        // Check for error messages
+        bool is_error = (current_lyrics_data.plain_lyrics.find("not found") != std::string::npos || 
+                         current_lyrics_data.plain_lyrics.find("missing") != std::string::npos ||
+                         current_lyrics_data.plain_lyrics.find("error") != std::string::npos);
+                         
+        if (is_error) {
+            // Centered Error Display
+            std::string error_msg = current_lyrics_data.plain_lyrics;
+            if (error_msg.length() > text_w) error_msg = error_msg.substr(0, text_w);
+            
+            int start_y = height / 2;
+            int start_x = (width - error_msg.length()) / 2;
+            if (start_x < 0) start_x = 0;
+            
+            wattron(target_win, COLOR_PAIR(1) | A_BOLD); // Red/Warning color
+            mvwprintw(target_win, start_y, start_x, "%s", error_msg.c_str());
+            
+            // Draw a box around it? Maybe too much. Let's just make it bold red.
+            // Add a "Try searching manually?" hint below
+            std::string hint = "(Press 'S' to search for another version)";
+            int hint_x = (width - hint.length()) / 2;
+            if (hint_x < 0) hint_x = 0;
+            wattroff(target_win, A_BOLD);
+            mvwprintw(target_win, start_y + 2, hint_x, "%s", hint.c_str());
+            
+            wattroff(target_win, COLOR_PAIR(1));
+            
+        } else {
+            // Normal Plain Lyrics
+            std::vector<std::string> lines;
+            std::string current_line;
+            for (char c : current_lyrics_data.plain_lyrics) {
+                if (c == '\n') {
+                    lines.push_back(current_line);
+                    current_line = "";
+                } else {
+                    current_line += c;
+                }
+            }
+            lines.push_back(current_line);
+            
+            // Word wrap (simple)
+            std::vector<std::string> wrapped_lines;
+            for (const auto& line : lines) {
+                if (line.length() <= text_w) {
+                    wrapped_lines.push_back(line);
+                } else {
+                    std::string temp = line;
+                    while (temp.length() > text_w) {
+                        wrapped_lines.push_back(temp.substr(0, text_w));
+                        temp = temp.substr(text_w);
+                    }
+                    wrapped_lines.push_back(temp);
+                }
+            }
+            
+            for (int i = 0; i < text_h && (i + lyrics_scroll_offset) < wrapped_lines.size(); ++i) {
+                std::string line = wrapped_lines[i + lyrics_scroll_offset];
+                int start_x = (width - line.length()) / 2;
+                if (start_x < 0) start_x = 0;
+                mvwprintw(target_win, i + 1, start_x, "%s", line.c_str());
+            }
+        }
+    }
+    
+    wrefresh(target_win);
+}
+
+void UI::handle_lyrics_input(int ch) {
+    switch (ch) {
+        case 27: set_mode(AppMode::PLAYBACK); break;
+        case KEY_UP: 
+            if (lyrics_scroll_offset > 0) lyrics_scroll_offset--; 
+            lyrics_auto_scroll = false;
+            break;
+        case KEY_DOWN: 
+            lyrics_scroll_offset++; 
+            lyrics_auto_scroll = false;
+            break;
+        case 'a': case 'A':
+            lyrics_auto_scroll = !lyrics_auto_scroll;
+            show_message(std::string("Auto-scroll: ") + (lyrics_auto_scroll ? "ON" : "OFF"));
+            break;
+    }
+}
+
 void UI::handle_intro_input(int ch) {
     if (ch == 10) { // Enter
         set_mode(AppMode::LIBRARY_BROWSER);
@@ -851,7 +1048,9 @@ void UI::play_next() {
         show_message("Autoplaying next: " + next_title);
         wrefresh(help_win);
         
+        player.stop(); // Stop current playback
         std::string stream_url = get_youtube_stream_url(next_url);
+        fetch_current_lyrics(next_title); // Fetch BEFORE loading/playing
         player.load(stream_url);
         last_played_path = stream_url;
         player.set_property("force-media-title", next_title);
@@ -919,3 +1118,51 @@ std::string UI::get_user_input(const std::string& prompt) {
     return input;
 }
 
+void UI::fetch_current_lyrics(std::string title_override) {
+    std::string title = title_override;
+    if (title.empty()) {
+        title = player.get_metadata("media-title");
+        if (title.empty()) title = player.get_metadata("filename");
+    }
+    
+    // Remove extension if present (simple check)
+    size_t last_dot = title.find_last_of(".");
+    if (last_dot != std::string::npos && last_dot > title.length() - 5) {
+        title = title.substr(0, last_dot);
+    }
+    
+    std::string artist = "";
+    std::string song_title = title;
+    
+    // 1. Try "Artist - Title" format
+    size_t dash_pos = title.find(" - ");
+    if (dash_pos != std::string::npos) {
+        artist = title.substr(0, dash_pos);
+        song_title = title.substr(dash_pos + 3);
+    }
+    
+    // 2. If no artist, try metadata
+    if (artist.empty()) {
+         artist = player.get_metadata("artist");
+    }
+    
+    // 3. If still no artist, use "Unknown" or just try to search with title if API allows (it usually needs artist)
+    // But let's be smarter. If we have no artist, we can't really query the API effectively without one.
+    // However, we can try to assume the whole title is the song title and pass a dummy artist or try to extract from title more aggressively?
+    // Let's just use "Unknown" for now, but update the error message to be less specific about "Artist - Title".
+    
+    show_message("Fetching lyrics...");
+    wrefresh(help_win); 
+    
+    if (artist.empty()) {
+        // Try to fetch with empty artist? It might fail.
+        // Let's try to pass the whole title as song_title and see what happens if we pass " " as artist.
+        // Actually, let's just fail gracefully with a better message.
+        current_lyrics_data = {"Lyrics not found. Could not detect artist.", {}, false};
+    } else {
+        current_lyrics_data = lyrics_manager.fetch_lyrics(artist, song_title);
+    }
+    
+    lyrics_scroll_offset = 0;
+    lyrics_auto_scroll = true;
+}

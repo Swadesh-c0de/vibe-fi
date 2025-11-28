@@ -5,6 +5,7 @@
 #include "library.hpp"
 #include "search.hpp"
 #include "playlist_manager.hpp"
+#include "lyrics.hpp"
 #include <string>
 #include <vector>
 #include <ncurses.h>
@@ -18,6 +19,7 @@ enum class AppMode {
     PLAYLIST_BROWSER,
     PLAYLIST_VIEW,
     PLAYLIST_SELECT_FOR_ADD,
+    LYRICS_VIEW,
     INTRO
 };
 
@@ -40,10 +42,12 @@ private:
     WINDOW* visualizer_win;
     WINDOW* status_win;
     WINDOW* help_win;
+    WINDOW* lyrics_win;
 
     // State
     Library library;
     PlaylistManager playlist_manager;
+    LyricsManager lyrics_manager;
     std::vector<LibraryItem> library_items;
     std::vector<SearchResult> search_results;
 
@@ -57,6 +61,10 @@ private:
     std::string playing_playlist_name;
     std::vector<PlaylistSong> current_playlist_songs;
     PlaylistSong song_to_add;
+    
+    LyricsData current_lyrics_data;
+    int lyrics_scroll_offset;
+    bool lyrics_auto_scroll;
     
     std::string message;
     std::chrono::steady_clock::time_point message_time;
@@ -76,8 +84,11 @@ private:
     void draw_playlists();
     void draw_playlist_view();
     void draw_playlist_select_for_add();
+    void draw_lyrics();
     void draw_intro();
     
+    // Helpers
+    void fetch_current_lyrics(std::string title_override = "");
     void draw_borders(WINDOW* win, const std::string& title);
     
     void handle_input();
@@ -88,6 +99,7 @@ private:
     void handle_playlists_input(int ch);
     void handle_playlist_view_input(int ch);
     void handle_playlist_select_for_add_input(int ch);
+    void handle_lyrics_input(int ch);
     void handle_intro_input(int ch);
 
 

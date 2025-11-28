@@ -23,6 +23,7 @@ add_executable(vibe_fi
     src/search.cpp
     src/library.cpp
     src/playlist_manager.cpp
+    src/lyrics.cpp
 )
 
 target_link_libraries(vibe_fi ${MPV_LIBRARIES} ${NCURSES_LIBRARIES})

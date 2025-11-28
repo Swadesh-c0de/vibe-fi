@@ -17,6 +17,8 @@
     - **Contextual Navigation**: Jump back to your current playlist or search results instantly.
 - **Autoplay**: Automatically plays the next song from your playlist or search results.
 - **Live Visualizer**: A responsive, retro-style audio visualizer that reacts to your music.
+- **Synced Lyrics**: Automatically fetches and displays synced lyrics for the current track.
+- **Unified UI**: Professional split-screen layout with symmetric visualizer and lyrics.
 - **Modern TUI**: A polished, keyboard-driven interface with centered dialogs and intuitive navigation.
 
 ---
@@ -121,3 +123,4 @@ Built with ❤️ using:
 - **[libmpv](https://mpv.io/)** - Powerful media playback core.
 - **[ncurses](https://invisible-island.net/ncurses/)** - Robust terminal UI framework.
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - Reliable YouTube media extraction.
+- **[lrclib.net](https://lrclib.net/)** - Free and open lyrics API.
