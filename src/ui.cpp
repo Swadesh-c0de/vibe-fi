@@ -11,6 +11,7 @@
 namespace fs = std::filesystem;
 
 UI::UI(Player& p) : player(p), running(true), mode(AppMode::PLAYBACK), selection_index(0), scroll_offset(0), lyrics_scroll_offset(0), lyrics_auto_scroll(true) {
+    set_escdelay(25);
     initscr();
     cbreak();
     noecho();
@@ -69,6 +70,11 @@ void UI::set_mode(AppMode new_mode) {
     mode = new_mode;
     selection_index = 0;
     scroll_offset = 0;
+    
+    if (mode == AppMode::PLAYLIST_BROWSER) {
+        update_preview_songs();
+    }
+    
     clear();
     refresh();
 }
@@ -643,6 +649,14 @@ void UI::handle_search_results_input(int ch) {
     }
 }
 
+void UI::update_preview_songs() {
+    if (playlists.empty() || selection_index < 0 || selection_index >= playlists.size()) {
+        preview_songs.clear();
+        return;
+    }
+    preview_songs = playlist_manager.get_playlist_songs(playlists[selection_index].name);
+}
+
 void UI::draw_playlists() {
     werase(main_win);
     draw_borders(main_win, "PLAYLISTS");
@@ -652,26 +666,84 @@ void UI::draw_playlists() {
     
     if (playlists.empty()) {
         mvwprintw(main_win, height/2, 2, "No playlists found. Press [N] to create one.");
-    } else {
-        // Header
-        wattron(main_win, A_BOLD | A_UNDERLINE);
-        mvwprintw(main_win, 1, 2, "%-20s %10s", "Playlist Name", "Songs");
-        wattroff(main_win, A_BOLD | A_UNDERLINE);
+        wrefresh(main_win);
+        return;
+    }
+
+    // Split layout: 30% list, 70% preview
+    int list_width = width * 0.3;
+    int preview_start_x = list_width + 1;
+    int preview_width = width - preview_start_x - 2;
+
+    // Draw Separator
+    for (int i = 1; i < height - 1; ++i) {
+        mvwaddch(main_win, i, list_width, ACS_VLINE);
+    }
+    mvwaddch(main_win, 0, list_width, ACS_TTEE);
+    mvwaddch(main_win, height - 1, list_width, ACS_BTEE);
+
+    // Draw Playlist List (Left Side)
+    wattron(main_win, A_BOLD | A_UNDERLINE);
+    mvwprintw(main_win, 1, 2, "%-20s", "Playlist Name");
+    wattroff(main_win, A_BOLD | A_UNDERLINE);
+    
+    for (int i = 0; i < playlists.size(); ++i) {
+        int y = i + 2;
+        if (y >= height - 1) break;
         
-        for (int i = 0; i < playlists.size(); ++i) {
-            int y = i + 2;
-            if (y >= height - 1) break;
-            
-            if (i == selection_index) wattron(main_win, COLOR_PAIR(6));
-            
-            std::string name = playlists[i].name;
-            if (name.length() > 20) name = name.substr(0, 17) + "...";
-            
-            mvwprintw(main_win, y, 2, "%-20s %10d", name.c_str(), playlists[i].song_count);
-            
-            if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
+        if (i == selection_index) wattron(main_win, COLOR_PAIR(6));
+        
+        std::string name = playlists[i].name;
+        std::string count_str = " (" + std::to_string(playlists[i].song_count) + ")";
+        
+        int max_name_len = list_width - 4 - count_str.length();
+        if (max_name_len < 1) max_name_len = 1;
+        
+        if (name.length() > max_name_len) {
+            if (max_name_len > 3) {
+                name = name.substr(0, max_name_len - 3) + "...";
+            } else {
+                name = name.substr(0, max_name_len);
+            }
+        }
+        
+        mvwprintw(main_win, y, 2, "%s%s", name.c_str(), count_str.c_str());
+        
+        if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
+    }
+
+    // Draw Preview (Right Side)
+    if (selection_index >= 0 && selection_index < playlists.size()) {
+        std::string preview_title = "Preview: " + playlists[selection_index].name;
+        if (preview_title.length() > preview_width) preview_title = preview_title.substr(0, preview_width - 3) + "...";
+        
+        wattron(main_win, A_BOLD);
+        mvwprintw(main_win, 1, preview_start_x + 2, "%s", preview_title.c_str());
+        wattroff(main_win, A_BOLD);
+
+        if (preview_songs.empty()) {
+            mvwprintw(main_win, 3, preview_start_x + 2, "Playlist is empty.");
+        } else {
+            int max_title_len = preview_width - 20; // Adjust for index (4+1) and duration (1+10) + padding
+            if (max_title_len < 10) max_title_len = 10;
+
+            wattron(main_win, A_UNDERLINE);
+            mvwprintw(main_win, 2, preview_start_x + 2, "%-4s %-*s %10s", "#", max_title_len, "Title", "Duration");
+            wattroff(main_win, A_UNDERLINE);
+
+            for (int i = 0; i < preview_songs.size(); ++i) {
+                int y = i + 3;
+                if (y >= height - 1) break;
+
+                std::string title = preview_songs[i].title;
+                if (title.length() > max_title_len) title = title.substr(0, max_title_len - 3) + "...";
+
+                mvwprintw(main_win, y, preview_start_x + 2, "%-4d %-*s %10s", 
+                          i + 1, max_title_len, title.c_str(), preview_songs[i].duration.c_str());
+            }
         }
     }
+
     wrefresh(main_win);
 }
 
@@ -685,9 +757,12 @@ void UI::draw_playlist_view() {
     if (current_playlist_songs.empty()) {
         mvwprintw(main_win, height/2, 2, "Playlist is empty.");
     } else {
+        int max_title_len = width - 20; // Adjust for index (4+1) and duration (1+10) + padding
+        if (max_title_len < 10) max_title_len = 10;
+
         // Header
         wattron(main_win, A_BOLD | A_UNDERLINE);
-        mvwprintw(main_win, 1, 2, "%-4s %-50s %10s", "#", "Title", "Duration");
+        mvwprintw(main_win, 1, 2, "%-4s %-*s %10s", "#", max_title_len, "Title", "Duration");
         wattroff(main_win, A_BOLD | A_UNDERLINE);
         
         for (int i = 0; i < current_playlist_songs.size(); ++i) {
@@ -697,9 +772,9 @@ void UI::draw_playlist_view() {
             if (i == selection_index) wattron(main_win, COLOR_PAIR(6));
             
             std::string title = current_playlist_songs[i].title;
-            if (title.length() > 50) title = title.substr(0, 47) + "...";
+            if (title.length() > max_title_len) title = title.substr(0, max_title_len - 3) + "...";
             
-            mvwprintw(main_win, y, 2, "%-4d %-50s %10s", i + 1, title.c_str(), current_playlist_songs[i].duration.c_str());
+            mvwprintw(main_win, y, 2, "%-4d %-*s %10s", i + 1, max_title_len, title.c_str(), current_playlist_songs[i].duration.c_str());
             
             if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
         }
@@ -710,8 +785,18 @@ void UI::draw_playlist_view() {
 void UI::handle_playlists_input(int ch) {
     switch (ch) {
         case 27: set_mode(AppMode::PLAYBACK); break;
-        case KEY_UP: if (selection_index > 0) selection_index--; break;
-        case KEY_DOWN: if (selection_index < playlists.size() - 1) selection_index++; break;
+        case KEY_UP: 
+            if (selection_index > 0) {
+                selection_index--; 
+                update_preview_songs();
+            }
+            break;
+        case KEY_DOWN: 
+            if (selection_index < playlists.size() - 1) {
+                selection_index++; 
+                update_preview_songs();
+            }
+            break;
         case 'n': case 'N': {
             std::string name = get_user_input("New Playlist Name");
             
@@ -719,6 +804,9 @@ void UI::handle_playlists_input(int ch) {
                 if (playlist_manager.create_playlist(name)) {
                     playlists = playlist_manager.list_playlists();
                     show_message("Playlist created.");
+                    // Auto-select the new playlist
+                    selection_index = playlists.size() - 1;
+                    update_preview_songs();
                 } else {
                     show_message("Playlist already exists.");
                 }
@@ -730,6 +818,7 @@ void UI::handle_playlists_input(int ch) {
                 playlist_manager.delete_playlist(playlists[selection_index].name);
                 playlists = playlist_manager.list_playlists();
                 if (selection_index >= playlists.size() && selection_index > 0) selection_index--;
+                update_preview_songs();
                 show_message("Playlist deleted.");
             }
             break;

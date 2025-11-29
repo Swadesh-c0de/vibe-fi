@@ -105,16 +105,16 @@ std::vector<PlaylistSong> PlaylistManager::get_playlist_songs(const std::string&
     while (std::getline(infile, line)) {
         if (line.empty()) continue;
         
-        size_t first_pipe = line.find('|');
-        if (first_pipe == std::string::npos) continue;
+        size_t last_pipe = line.rfind('|');
+        if (last_pipe == std::string::npos) continue;
         
-        size_t second_pipe = line.find('|', first_pipe + 1);
-        if (second_pipe == std::string::npos) continue;
+        size_t second_last_pipe = line.rfind('|', last_pipe - 1);
+        if (second_last_pipe == std::string::npos) continue;
         
         PlaylistSong song;
-        song.title = line.substr(0, first_pipe);
-        song.url = line.substr(first_pipe + 1, second_pipe - first_pipe - 1);
-        song.duration = line.substr(second_pipe + 1);
+        song.title = line.substr(0, second_last_pipe);
+        song.url = line.substr(second_last_pipe + 1, last_pipe - second_last_pipe - 1);
+        song.duration = line.substr(last_pipe + 1);
         songs.push_back(song);
     }
     

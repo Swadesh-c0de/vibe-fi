@@ -60,6 +60,7 @@ private:
     std::string current_playlist_name;
     std::string playing_playlist_name;
     std::vector<PlaylistSong> current_playlist_songs;
+    std::vector<PlaylistSong> preview_songs; // For side-by-side view
     PlaylistSong song_to_add;
     
     LyricsData current_lyrics_data;
@@ -88,6 +89,7 @@ private:
     void draw_intro();
     
     // Helpers
+    void update_preview_songs();
     void fetch_current_lyrics(std::string title_override = "");
     void draw_borders(WINDOW* win, const std::string& title);
     
