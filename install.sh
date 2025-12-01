@@ -46,7 +46,7 @@ install_dependencies() {
         ubuntu)
             echo -e "${YELLOW}Installing dependencies for Ubuntu/Debian...${NC}"
             sudo apt update
-            sudo apt install -y build-essential cmake libmpv-dev libncurses-dev mpv ffmpeg python3 curl
+            sudo apt install -y build-essential cmake libmpv-dev libncurses-dev mpv ffmpeg python3 curl nodejs
             
             # Install yt-dlp (not in default repos for older Ubuntu)
             if ! command -v yt-dlp &> /dev/null; then
