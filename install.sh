@@ -46,13 +46,19 @@ install_dependencies() {
         ubuntu)
             echo -e "${YELLOW}Installing dependencies for Ubuntu/Debian...${NC}"
             sudo apt update
-            sudo apt install -y build-essential cmake libmpv-dev libncurses-dev mpv ffmpeg
+            sudo apt install -y build-essential cmake libmpv-dev libncurses-dev mpv ffmpeg python3 curl
             
             # Install yt-dlp (not in default repos for older Ubuntu)
             if ! command -v yt-dlp &> /dev/null; then
                 echo -e "${YELLOW}Installing yt-dlp...${NC}"
                 sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
                 sudo chmod a+rx /usr/local/bin/yt-dlp
+            fi
+            
+            # Verify yt-dlp installation
+            if ! yt-dlp --version &> /dev/null; then
+                echo -e "${RED}Error: yt-dlp failed to run. Please check if python3 is installed correctly.${NC}"
+                exit 1
             fi
             ;;
         macos)

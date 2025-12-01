@@ -13,7 +13,8 @@ bool is_url(const std::string& path) {
 std::string get_youtube_stream_url(const std::string& url) {
     std::string result;
     // Added --force-ipv4 to help with network issues and --no-progress to avoid escape sequences
-    std::string cmd = "yt-dlp --no-progress --force-ipv4 -g -f bestaudio \"" + url + "\" 2>/dev/null";
+    // Removed 2>/dev/null to allow error messages to be seen in the console
+    std::string cmd = "yt-dlp --no-progress --force-ipv4 -g -f bestaudio \"" + url + "\"";
     
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) {
