@@ -63,7 +63,7 @@ void UI::draw_borders(WINDOW* win, const std::string& title) {
         mvwprintw(win, 0, 2, " %s ", title.c_str());
     }
     wattroff(win, COLOR_PAIR(1));
-    wrefresh(win);
+    wnoutrefresh(win);
 }
 
 void UI::set_mode(AppMode new_mode) {
@@ -155,6 +155,7 @@ void UI::draw() {
     
     update_status();
     update_help();
+    doupdate();
 }
 
 void UI::draw_playback() {
@@ -229,7 +230,7 @@ void UI::update_visualizer() {
     }
     wattroff(visualizer_win, COLOR_PAIR(3) | A_BOLD);
     
-    wrefresh(visualizer_win);
+    wnoutrefresh(visualizer_win);
 }
 
 void UI::draw_playlist_select_for_add() {
@@ -264,7 +265,7 @@ void UI::draw_playlist_select_for_add() {
     
     // Always show the option to create new
     mvwprintw(main_win, height - 2, 2, "Press [N] to create a new playlist");
-    wrefresh(main_win);
+    wnoutrefresh(main_win);
 }
 
 void UI::draw_library() {
@@ -294,7 +295,7 @@ void UI::draw_library() {
             wattroff(main_win, COLOR_PAIR(6));
         }
     }
-    wrefresh(main_win);
+    wnoutrefresh(main_win);
 }
 
 void UI::draw_search_input() {
@@ -327,7 +328,7 @@ void UI::draw_search_input() {
     }
     wattroff(main_win, COLOR_PAIR(6));
     
-    wrefresh(main_win);
+    wnoutrefresh(main_win);
 }
 
 void UI::draw_search_results() {
@@ -360,7 +361,7 @@ void UI::draw_search_results() {
             if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
         }
     }
-    wrefresh(main_win);
+    wnoutrefresh(main_win);
 }
 
 
@@ -414,7 +415,7 @@ void UI::update_status() {
     
     std::string vol_str = "Vol: " + std::to_string(player.get_volume()) + "%";
     mvwprintw(status_win, 3, width - vol_str.length() - 2, "%s", vol_str.c_str());
-    wrefresh(status_win);
+    wnoutrefresh(status_win);
 }
 
 void UI::update_help() {
@@ -451,7 +452,7 @@ void UI::update_help() {
              mvwprintw(help_win, 1, 2, "Welcome! Press [ENTER] to browse library.");
         wattroff(help_win, COLOR_PAIR(4));
     }
-    wrefresh(help_win);
+    wnoutrefresh(help_win);
 }
 
 void UI::show_message(const std::string& msg) {
@@ -607,12 +608,14 @@ void UI::handle_search_results_input(int ch) {
         case 10: // Enter
             if (!search_results.empty()) {
                 show_message("Resolving...");
-                wrefresh(help_win); 
+                wnoutrefresh(help_win);
+                doupdate(); 
                 
                 try {
                     player.stop(); // Stop current playback
                     show_message("Resolving stream...");
-                    wrefresh(help_win);
+                    wnoutrefresh(help_win);
+                    doupdate();
                     std::string stream_url = get_youtube_stream_url(search_results[selection_index].url);
                     
                     fetch_current_lyrics(search_results[selection_index].title); // Fetch BEFORE loading/playing
@@ -666,7 +669,7 @@ void UI::draw_playlists() {
     
     if (playlists.empty()) {
         mvwprintw(main_win, height/2, 2, "No playlists found. Press [N] to create one.");
-        wrefresh(main_win);
+        wnoutrefresh(main_win);
         return;
     }
 
@@ -744,7 +747,7 @@ void UI::draw_playlists() {
         }
     }
 
-    wrefresh(main_win);
+    wnoutrefresh(main_win);
 }
 
 void UI::draw_playlist_view() {
@@ -779,7 +782,7 @@ void UI::draw_playlist_view() {
             if (i == selection_index) wattroff(main_win, COLOR_PAIR(6));
         }
     }
-    wrefresh(main_win);
+    wnoutrefresh(main_win);
 }
 
 void UI::handle_playlists_input(int ch) {
@@ -852,7 +855,8 @@ void UI::handle_playlist_view_input(int ch) {
         case 10: // Enter
             if (!current_playlist_songs.empty()) {
                 show_message("Resolving...");
-                wrefresh(help_win);
+                wnoutrefresh(help_win);
+                doupdate();
                 try {
                     player.stop(); // Stop current playback
                     fetch_current_lyrics(current_playlist_songs[selection_index].title); // Fetch BEFORE loading/playing
@@ -943,7 +947,7 @@ void UI::draw_intro() {
     std::string instruction = "Press [L] Library  [S] Search  [P] Playlists  [ESC] Quit";
     mvwprintw(main_win, start_y + ascii_art.size() + 4, (width - instruction.length()) / 2, "%s", instruction.c_str());
     
-    wrefresh(main_win);
+    wnoutrefresh(main_win);
 }
 
 void UI::draw_lyrics() {
@@ -1067,7 +1071,7 @@ void UI::draw_lyrics() {
         }
     }
     
-    wrefresh(target_win);
+    wnoutrefresh(target_win);
 }
 
 void UI::handle_lyrics_input(int ch) {
@@ -1135,7 +1139,8 @@ void UI::play_next() {
     
     try {
         show_message("Autoplaying next: " + next_title);
-        wrefresh(help_win);
+        wnoutrefresh(help_win);
+        doupdate();
         
         player.stop(); // Stop current playback
         std::string stream_url = get_youtube_stream_url(next_url);
@@ -1167,7 +1172,8 @@ std::string UI::get_user_input(const std::string& prompt) {
     
     mvwprintw(input_win, 0, 2, " %s ", prompt.c_str());
     mvwprintw(input_win, 2, 2, "> ");
-    wrefresh(input_win);
+    wnoutrefresh(input_win);
+    doupdate();
     
     curs_set(1);
     std::string input;
@@ -1185,13 +1191,15 @@ std::string UI::get_user_input(const std::string& prompt) {
                 input.pop_back();
                 mvwprintw(input_win, 2, 4, "%s ", input.c_str()); // Clear last char
                 wmove(input_win, 2, 4 + input.length());
-                wrefresh(input_win);
+                wnoutrefresh(input_win);
+                doupdate();
             }
         } else if (isprint(ch)) {
             if (input.length() < win_w - 6) {
                 input += (char)ch;
                 mvwprintw(input_win, 2, 4, "%s", input.c_str());
-                wrefresh(input_win);
+                wnoutrefresh(input_win);
+                doupdate();
             }
         }
     }
@@ -1241,7 +1249,8 @@ void UI::fetch_current_lyrics(std::string title_override) {
     // Let's just use "Unknown" for now, but update the error message to be less specific about "Artist - Title".
     
     show_message("Fetching lyrics...");
-    wrefresh(help_win); 
+    wnoutrefresh(help_win);
+    doupdate(); 
     
     if (artist.empty()) {
         // Try to fetch with empty artist? It might fail.
