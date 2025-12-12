@@ -4,6 +4,7 @@
 #include <array>
 #include <regex>
 #include <algorithm>
+#include <sstream>
 
 LyricsManager::LyricsManager() {}
 

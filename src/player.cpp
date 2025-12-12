@@ -95,7 +95,8 @@ void Player::set_volume(int volume) {
 }
 
 void Player::seek(double seconds) {
-    const char* cmd[] = {"seek", std::to_string(seconds).c_str(), "relative", NULL};
+    std::string seconds_str = std::to_string(seconds);
+    const char* cmd[] = {"seek", seconds_str.c_str(), "relative", NULL};
     check_error(mpv_command(mpv, cmd));
 }
 
