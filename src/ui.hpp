@@ -19,6 +19,7 @@ enum class AppMode {
     PLAYLIST_BROWSER,
     PLAYLIST_VIEW,
     PLAYLIST_SELECT_FOR_ADD,
+    PLAYLIST_SELECT_FOR_MOVE,
     LYRICS_VIEW,
     INTRO
 };
@@ -88,6 +89,10 @@ private:
     void draw_lyrics();
     void draw_intro();
     
+    // State for moving songs
+    int song_to_move_index;
+    std::string song_to_move_origin_playlist;
+
     // Helpers
     void update_preview_songs();
     void fetch_current_lyrics(std::string title_override = "");
@@ -101,6 +106,7 @@ private:
     void handle_playlists_input(int ch);
     void handle_playlist_view_input(int ch);
     void handle_playlist_select_for_add_input(int ch);
+    void handle_playlist_select_for_move_input(int ch);
     void handle_lyrics_input(int ch);
     void handle_intro_input(int ch);
 

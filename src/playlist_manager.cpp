@@ -43,6 +43,38 @@ void PlaylistManager::delete_playlist(const std::string& name) {
     }
 }
 
+bool PlaylistManager::rename_playlist(const std::string& old_name, const std::string& new_name) {
+    if (new_name.empty()) return false;
+    
+    std::string old_path = get_playlist_path(old_name);
+    std::string new_path = get_playlist_path(new_name);
+    
+    if (!fs::exists(old_path)) return false; // Old doesn't exist
+    if (fs::exists(new_path)) return false;  // New already exists
+    
+    try {
+        fs::rename(old_path, new_path);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool PlaylistManager::move_song(const std::string& src_playlist, int src_index, const std::string& dest_playlist) {
+    auto songs = get_playlist_songs(src_playlist);
+    if (src_index < 0 || src_index >= songs.size()) return false;
+    
+    PlaylistSong song_to_move = songs[src_index];
+    
+    // Add to destination
+    if (add_song_to_playlist(dest_playlist, song_to_move)) {
+        // Remove from source only if add was successful
+        remove_song_from_playlist(src_playlist, src_index);
+        return true;
+    }
+    return false;
+}
+
 bool PlaylistManager::add_song_to_playlist(const std::string& playlist_name, const PlaylistSong& song) {
     // Check for duplicates
     auto current_songs = get_playlist_songs(playlist_name);

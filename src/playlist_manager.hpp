@@ -23,6 +23,8 @@ public:
     // Core actions
     bool create_playlist(const std::string& name);
     void delete_playlist(const std::string& name);
+    bool rename_playlist(const std::string& old_name, const std::string& new_name);
+    bool move_song(const std::string& src_playlist, int src_index, const std::string& dest_playlist);
     bool add_song_to_playlist(const std::string& playlist_name, const PlaylistSong& song);
     void remove_song_from_playlist(const std::string& playlist_name, int index);
     

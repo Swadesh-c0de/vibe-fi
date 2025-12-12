@@ -98,8 +98,15 @@ vibe
 
 #### **Playlist Management**
 - **N**: Create New Playlist (from "Add to Playlist" or Browser)
-- **D**: Delete Playlist / Remove Song
-- **ENTER**: Select / Play
+- **R**: Rename Playlist
+- **D**: Delete Playlist
+- **ENTER**: Select / View
+
+#### **Playlist View**
+- **ENTER**: Play
+- **D**: Remove Song
+- **M**: Move Song
+- **ESC**: Back
 
 ---
 

@@ -149,6 +149,8 @@ void UI::draw() {
         draw_playlist_view();
     } else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD) {
         draw_playlist_select_for_add();
+    } else if (mode == AppMode::PLAYLIST_SELECT_FOR_MOVE) {
+        draw_playlist_select_for_add(); // Reuse same drawing logic, maybe change title in draw func?
     } else if (mode == AppMode::LYRICS_VIEW) {
         draw_lyrics();
     }
@@ -235,7 +237,8 @@ void UI::update_visualizer() {
 
 void UI::draw_playlist_select_for_add() {
     werase(main_win);
-    draw_borders(main_win, "SELECT PLAYLIST TO ADD TO");
+    std::string title = (mode == AppMode::PLAYLIST_SELECT_FOR_MOVE) ? "MOVE SONG TO..." : "SELECT PLAYLIST TO ADD TO";
+    draw_borders(main_win, title);
     
     int height, width;
     getmaxyx(main_win, height, width);
@@ -438,9 +441,9 @@ void UI::update_help() {
         else if (mode == AppMode::SEARCH_RESULTS)
              mvwprintw(help_win, 1, 2, "[ENTER] Play [A] Add to Playlist [S] New Search [ESC] Back");
         else if (mode == AppMode::PLAYLIST_BROWSER)
-             mvwprintw(help_win, 1, 2, "[ENTER] View [N] New Playlist [D] Delete [ESC] Back");
+             mvwprintw(help_win, 1, 2, "[ENTER] View [N] New [D] Delete [R] Rename [ESC] Back");
         else if (mode == AppMode::PLAYLIST_VIEW)
-             mvwprintw(help_win, 1, 2, "[ENTER] Play [D] Remove [ESC] Back");
+             mvwprintw(help_win, 1, 2, "[ENTER] Play [D] Remove [M] Move [ESC] Back");
         else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD)
              mvwprintw(help_win, 1, 2, "[ENTER] Select [N] New Playlist [ESC] Cancel");
         else if (mode == AppMode::LYRICS_VIEW)
@@ -473,6 +476,7 @@ void UI::handle_input() {
         else if (mode == AppMode::PLAYLIST_BROWSER) handle_playlists_input(ch);
         else if (mode == AppMode::PLAYLIST_VIEW) handle_playlist_view_input(ch);
         else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD) handle_playlist_select_for_add_input(ch);
+        else if (mode == AppMode::PLAYLIST_SELECT_FOR_MOVE) handle_playlist_select_for_move_input(ch);
         else if (mode == AppMode::LYRICS_VIEW) handle_lyrics_input(ch);
         else if (mode == AppMode::INTRO) handle_intro_input(ch);
     } catch (const std::exception& e) {
@@ -816,7 +820,7 @@ void UI::handle_playlists_input(int ch) {
             }
             break;
         }
-        case 'd': case 'D':
+    case 'd': case 'D':
             if (!playlists.empty()) {
                 playlist_manager.delete_playlist(playlists[selection_index].name);
                 playlists = playlist_manager.list_playlists();
@@ -825,6 +829,31 @@ void UI::handle_playlists_input(int ch) {
                 show_message("Playlist deleted.");
             }
             break;
+        case 'r': case 'R': {
+            if (!playlists.empty()) {
+                std::string old_name = playlists[selection_index].name;
+                std::string new_name = get_user_input("Rename Playlist to");
+                
+                if (!new_name.empty() && new_name != old_name) {
+                    if (playlist_manager.rename_playlist(old_name, new_name)) {
+                        playlists = playlist_manager.list_playlists();
+                        
+                        // Find and select the renamed playlist
+                        for (int i=0; i < playlists.size(); ++i) {
+                            if (playlists[i].name == new_name) {
+                                selection_index = i;
+                                break;
+                            }
+                        }
+                        update_preview_songs();
+                        show_message("Playlist renamed.");
+                    } else {
+                        show_message("Rename failed (Name exists?)");
+                    }
+                }
+            }
+            break;
+        }
         case 10: // Enter
             if (!playlists.empty()) {
                 current_playlist_name = playlists[selection_index].name;
@@ -850,6 +879,16 @@ void UI::handle_playlist_view_input(int ch) {
                 current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
                 if (selection_index >= current_playlist_songs.size() && selection_index > 0) selection_index--;
                 show_message("Song removed.");
+            }
+            break;
+        case 'm': case 'M':
+            if (!current_playlist_songs.empty()) {
+                song_to_move_index = selection_index;
+                song_to_move_origin_playlist = current_playlist_name;
+                
+                playlists = playlist_manager.list_playlists();
+                selection_index = 0;
+                set_mode(AppMode::PLAYLIST_SELECT_FOR_MOVE);
             }
             break;
         case 10: // Enter
@@ -911,6 +950,62 @@ void UI::handle_playlist_select_for_add_input(int ch) {
                 }
             }
             draw_playlist_select_for_add();
+            break;
+        }
+    }
+}
+
+void UI::handle_playlist_select_for_move_input(int ch) {
+    switch (ch) {
+        case 27: 
+            // Return to playlist view without doing anything
+            current_playlist_name = song_to_move_origin_playlist;
+            current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
+            selection_index = song_to_move_index;
+            set_mode(AppMode::PLAYLIST_VIEW); 
+            break;
+        case KEY_UP: if (selection_index > 0) selection_index--; break;
+        case KEY_DOWN: if (selection_index < playlists.size() - 1) selection_index++; break;
+        case 10: // Enter
+            if (!playlists.empty()) {
+                std::string dest_playlist = playlists[selection_index].name;
+                
+                if (dest_playlist == song_to_move_origin_playlist) {
+                    show_message("Cannot move to same playlist.");
+                } else {
+                    if (playlist_manager.move_song(song_to_move_origin_playlist, song_to_move_index, dest_playlist)) {
+                        show_message("Song moved to " + dest_playlist);
+                        
+                        // Return to origin playlist view
+                        current_playlist_name = song_to_move_origin_playlist;
+                        current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
+                        
+                        // Adjust selection index if we removed the last item
+                        if (selection_index >= current_playlist_songs.size() && selection_index > 0) {
+                            selection_index--;
+                        }
+                        
+                        set_mode(AppMode::PLAYLIST_VIEW);
+                    } else {
+                        show_message("Failed to move song.");
+                    }
+                }
+            }
+            break;
+        case 'n': case 'N': {
+             // Allow creating new playlist to move to
+            std::string name = get_user_input("New Playlist Name");
+            
+            if (name.length() > 0) {
+                if (playlist_manager.create_playlist(name)) {
+                    playlists = playlist_manager.list_playlists();
+                    show_message("Playlist created.");
+                    selection_index = playlists.size() - 1;
+                } else {
+                    show_message("Playlist already exists.");
+                }
+            }
+            draw_playlist_select_for_add(); // Refresh title will be correct because mode is set
             break;
         }
     }
