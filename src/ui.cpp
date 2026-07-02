@@ -7,10 +7,14 @@
 #include <thread>
 #include <algorithm>
 #include <filesystem>
+#include <iomanip>
+#include <fstream>
+#include "mpris.hpp"
 
 namespace fs = std::filesystem;
 
-UI::UI(Player& p) : player(p), running(true), mode(AppMode::PLAYBACK), selection_index(0), scroll_offset(0), lyrics_scroll_offset(0), lyrics_auto_scroll(true) {
+UI::UI(Player& p) : player(p), running(true), mode(AppMode::INTRO), selection_index(0), scroll_offset(0), lyrics_scroll_offset(0), lyrics_auto_scroll(true), current_visualizer_mode(VisualizerMode::STEREO_BARS), current_theme_idx(0), last_key(0) {
+    discord_rpc = std::make_unique<DiscordRPC>("1345437817082089472"); // Vibe-Fi Client ID
     set_escdelay(25);
     initscr();
     cbreak();
@@ -22,13 +26,8 @@ UI::UI(Player& p) : player(p), running(true), mode(AppMode::PLAYBACK), selection
     start_color();
     use_default_colors();
     
-    // Define colors
-    init_pair(1, COLOR_CYAN, -1);    // Borders/Text
-    init_pair(2, COLOR_GREEN, -1);   // Progress/Active
-    init_pair(3, COLOR_MAGENTA, -1); // Visualizer
-    init_pair(4, COLOR_RED, -1);     // Alerts/Help
-    init_pair(5, COLOR_BLUE, -1);    // Background elements
-    init_pair(6, COLOR_BLACK, COLOR_CYAN); // Selected item
+    load_themes();
+    apply_theme();
 
     refresh(); // Refresh stdscr before creating windows
     
@@ -40,9 +39,16 @@ UI::UI(Player& p) : player(p), running(true), mode(AppMode::PLAYBACK), selection
     autoplay_enabled = true;
     playing_index = -1;
     is_playing_from_playlist = false;
+    // Start MPRIS listener
+    start_mpris_server(
+        [this]() { player.toggle_pause(); },
+        [this]() { play_next(); },
+        [this]() { play_previous(); }
+    );
 }
 
 UI::~UI() {
+    save_state();
     if (lyrics_win) delwin(lyrics_win);
     if (visualizer_win) delwin(visualizer_win);
     if (status_win) delwin(status_win);
@@ -153,6 +159,8 @@ void UI::draw() {
         draw_playlist_select_for_add(); // Reuse same drawing logic, maybe change title in draw func?
     } else if (mode == AppMode::LYRICS_VIEW) {
         draw_lyrics();
+    } else if (mode == AppMode::QUEUE_VIEW) {
+        draw_queue();
     }
     
     update_status();
@@ -172,7 +180,6 @@ void UI::update_visualizer() {
     int height, width;
     getmaxyx(visualizer_win, height, width);
     
-    // Inner drawing area
     int draw_h = height - 2;
     int draw_w = width - 2;
     int bar_width = 2; 
@@ -180,52 +187,70 @@ void UI::update_visualizer() {
     
     static std::vector<int> bars(num_bars, 0);
     if (bars.size() != num_bars) bars.resize(num_bars, 0);
-    
-    // Symmetric Visualizer Logic
-    // We calculate half the bars and mirror them
-    int half_bars = num_bars / 2;
-    
-    for (int i = 0; i < half_bars; ++i) {
-        if (player.is_playing() && !player.is_paused() && !player.is_idle()) {
-            int max_h = draw_h;
-            int target = rand() % max_h;
-            
-            // Smooth transition
-            if (bars[i] < target) bars[i] += 1;
-            else if (bars[i] > target) bars[i] -= 1;
-            
-            if (bars[i] < 0) bars[i] = 0;
-            if (bars[i] >= draw_h) bars[i] = draw_h - 1;
-        } else {
-            if (bars[i] > 0) bars[i]--;
+
+    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle();
+
+    if (current_visualizer_mode == VisualizerMode::STEREO_BARS) {
+        int half_bars = num_bars / 2;
+        for (int i = 0; i < half_bars; ++i) {
+            if (is_active) {
+                int target = rand() % draw_h;
+                if (bars[i] < target) bars[i] += 1;
+                else if (bars[i] > target) bars[i] -= 1;
+            } else {
+                if (bars[i] > 0) bars[i]--;
+            }
+            bars[num_bars - 1 - i] = bars[i];
         }
-        // Mirror
-        bars[num_bars - 1 - i] = bars[i];
-    }
-    
-    // Center bar (if odd)
-    if (num_bars % 2 != 0) {
+        if (num_bars % 2 != 0) {
+            int center = num_bars / 2;
+            if (is_active) {
+                int target = rand() % draw_h;
+                if (bars[center] < target) bars[center] += 1;
+                else if (bars[center] > target) bars[center] -= 1;
+            } else {
+                if (bars[center] > 0) bars[center]--;
+            }
+        }
+    } else if (current_visualizer_mode == VisualizerMode::WAVEFORM) {
+        for (int i = 0; i < num_bars - 1; ++i) bars[i] = bars[i + 1];
+        if (is_active) {
+            static float t = 0.0f;
+            t += 0.2f;
+            int base = (draw_h / 2) + sin(t) * (draw_h / 3);
+            int noise = (rand() % 3) - 1;
+            int target = base + noise;
+            if (target < 0) target = 0;
+            if (target >= draw_h) target = draw_h - 1;
+            bars[num_bars - 1] = target;
+        } else {
+            if (bars[num_bars - 1] > 0) bars[num_bars - 1]--;
+        }
+    } else if (current_visualizer_mode == VisualizerMode::PULSE) {
+        for (int i = 0; i < num_bars / 2; ++i) bars[i] = bars[i + 1];
+        for (int i = num_bars - 1; i > num_bars / 2; --i) bars[i] = bars[i - 1];
         int center = num_bars / 2;
-        if (player.is_playing() && !player.is_paused() && !player.is_idle()) {
-             int target = rand() % draw_h;
-             if (bars[center] < target) bars[center] += 1;
-             else if (bars[center] > target) bars[center] -= 1;
+        if (is_active) {
+            static int beat_timer = 0;
+            beat_timer++;
+            if (beat_timer > 3) {
+                bars[center] = (rand() % (draw_h / 2)) + (draw_h / 2);
+                beat_timer = 0;
+            } else {
+                bars[center] = bars[center] > 1 ? bars[center] - 1 : 0;
+            }
         } else {
-             if (bars[center] > 0) bars[center]--;
+            if (bars[center] > 0) bars[center]--;
         }
+        if (num_bars % 2 == 0) bars[center - 1] = bars[center];
     }
     
     wattron(visualizer_win, COLOR_PAIR(3) | A_BOLD);
     for (int i = 0; i < num_bars; ++i) {
         int bar_height = bars[i];
-        
-        // Draw from bottom up
         for (int y = 0; y < bar_height; ++y) {
             int draw_y = height - 2 - y;
             for (int k = 0; k < bar_width; ++k) {
-                 // Use block characters for cleaner look if terminal supports, 
-                 // but for ncurses safety stick to simple chars or ACS
-                 // ACS_BLOCK is often solid
                  mvwaddch(visualizer_win, draw_y, (i * bar_width) + 1 + k, ACS_CKBOARD); 
             }
         }
@@ -441,11 +466,13 @@ void UI::update_help() {
         else if (mode == AppMode::SEARCH_RESULTS)
              mvwprintw(help_win, 1, 2, "[ENTER] Play [A] Add to Playlist [S] New Search [ESC] Back");
         else if (mode == AppMode::PLAYLIST_BROWSER)
-             mvwprintw(help_win, 1, 2, "[ENTER] View [N] New [D] Delete [R] Rename [ESC] Back");
+             mvwprintw(help_win, 1, 2, "[ENTER] View [N] New [D] Delete [R] Rename [E] Export M3U [ESC] Back");
         else if (mode == AppMode::PLAYLIST_VIEW)
              mvwprintw(help_win, 1, 2, "[ENTER] Play [D] Remove [M] Move [ESC] Back");
         else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD)
              mvwprintw(help_win, 1, 2, "[ENTER] Select [N] New Playlist [ESC] Cancel");
+        else if (mode == AppMode::QUEUE_VIEW)
+             mvwprintw(help_win, 1, 2, "[ENTER] Play [J/K] Move Up/Down [D] Delete [ESC] Back");
         else if (mode == AppMode::LYRICS_VIEW)
              mvwprintw(help_win, 1, 2, "[UP/DOWN] Scroll [ESC] Back");
         else
@@ -478,10 +505,12 @@ void UI::handle_input() {
         else if (mode == AppMode::PLAYLIST_SELECT_FOR_ADD) handle_playlist_select_for_add_input(ch);
         else if (mode == AppMode::PLAYLIST_SELECT_FOR_MOVE) handle_playlist_select_for_move_input(ch);
         else if (mode == AppMode::LYRICS_VIEW) handle_lyrics_input(ch);
+        else if (mode == AppMode::QUEUE_VIEW) handle_queue_input(ch);
         else if (mode == AppMode::INTRO) handle_intro_input(ch);
     } catch (const std::exception& e) {
         show_message(std::string("Error: ") + e.what());
     }
+    last_key = ch;
 }
 
 void UI::handle_playback_input(int ch) {
@@ -518,9 +547,40 @@ void UI::handle_playback_input(int ch) {
             autoplay_enabled = !autoplay_enabled; 
             show_message(std::string("Autoplay: ") + (autoplay_enabled ? "ON" : "OFF"));
             break;
+        case 'u': case 'U': {
+            std::string url = get_user_input("Paste YouTube URL");
+            if (!url.empty()) {
+                show_message("Loading URL...");
+                wnoutrefresh(help_win); doupdate();
+                std::string stream_url = get_youtube_stream_url(url);
+                if (!stream_url.empty()) {
+                    player.stop();
+                    fetch_current_lyrics("Unknown", url);
+                    player.load(stream_url);
+                    last_played_path = stream_url;
+                    player.set_property("force-media-title", url);
+                    player.play();
+                } else {
+                    show_message("Failed to load URL.");
+                }
+            }
+            break;
+        }
         case 'p': case 'P':
             playlists = playlist_manager.list_playlists();
             set_mode(AppMode::PLAYLIST_BROWSER);
+            break;
+        case 'c': case 'C':
+            selection_index = queue_index;
+            if (selection_index < 0) selection_index = 0;
+            scroll_offset = 0;
+            set_mode(AppMode::QUEUE_VIEW);
+            break;
+        case 't': case 'T':
+            cycle_theme();
+            break;
+        case 'v': case 'V':
+            cycle_visualizer();
             break;
 
         case KEY_UP: 
@@ -537,13 +597,13 @@ void UI::handle_playback_input(int ch) {
 void UI::handle_library_input(int ch) {
     switch (ch) {
         case 27: set_mode(AppMode::PLAYBACK); break; 
-        case KEY_UP: 
+        case 'k': case KEY_UP: 
             if (selection_index > 0) {
                 selection_index--;
                 if (selection_index < scroll_offset) scroll_offset = selection_index;
             }
             break;
-        case KEY_DOWN:
+        case 'j': case KEY_DOWN:
             if (selection_index < library_items.size() - 1) {
                 selection_index++;
                 int height, w; 
@@ -551,6 +611,7 @@ void UI::handle_library_input(int ch) {
                 if (selection_index >= scroll_offset + height - 2) scroll_offset++;
             }
             break;
+        case 'h':
         case KEY_BACKSPACE:
         case 127:
             if (current_path != "/") {
@@ -559,7 +620,8 @@ void UI::handle_library_input(int ch) {
                 selection_index = 0; scroll_offset = 0;
             }
             break;
-        case 10: // Enter
+        case 'l':
+        case 10: { // Enter
             if (library_items.empty()) break;
             auto& item = library_items[selection_index];
             if (item.is_directory) {
@@ -567,8 +629,20 @@ void UI::handle_library_input(int ch) {
                 library_items = library.list_directory(current_path);
                 selection_index = 0; scroll_offset = 0;
             } else {
+                play_queue.clear();
+                for (const auto& li : library_items) {
+                    if (!li.is_directory) {
+                        play_queue.push_back({li.name, li.path, "0:00"});
+                    }
+                }
+                queue_index = 0;
+                for(int i=0; i<play_queue.size(); ++i) {
+                    if(play_queue[i].url == item.path) { queue_index = i; break; }
+                }
+                is_playing_from_playlist = false;
+                
                 player.stop(); // Stop current playback
-                fetch_current_lyrics(item.path); // Fetch BEFORE loading/playing
+                fetch_current_lyrics(item.name, item.path); // Fetch BEFORE loading/playing
                 player.load(item.path);
                 last_played_path = item.path;
                 player.set_property("force-media-title", item.path); 
@@ -576,6 +650,29 @@ void UI::handle_library_input(int ch) {
                 set_mode(AppMode::PLAYBACK);
             }
             break;
+        }
+        case 'G': {
+            selection_index = library_items.size() - 1;
+            int h, w; getmaxyx(main_win, h, w);
+            scroll_offset = std::max(0, (int)library_items.size() - (h - 2));
+            break;
+        }
+        case 'g':
+            if (last_key == 'g') {
+                selection_index = 0;
+                scroll_offset = 0;
+            }
+            break;
+        case 'f': case 'F': {
+            std::string query = get_user_input("Fuzzy Search Library");
+            if (!query.empty()) {
+                show_message("Searching...");
+                wnoutrefresh(help_win); doupdate();
+                library_items = library.search(query);
+                selection_index = 0; scroll_offset = 0;
+            }
+            break;
+        }
     }
 }
 
@@ -601,14 +698,18 @@ void UI::handle_search_input_input(int ch) {
 
 void UI::handle_search_results_input(int ch) {
     switch (ch) {
+        case 'h':
         case 27: set_mode(AppMode::PLAYBACK); break;
         case 's': case 'S':
             search_query = "";
             selection_index = 0;
             set_mode(AppMode::SEARCH_INPUT);
             break;
-        case KEY_UP: if (selection_index > 0) selection_index--; break;
-        case KEY_DOWN: if (selection_index < search_results.size() - 1) selection_index++; break;
+        case 'k': case KEY_UP: if (selection_index > 0) selection_index--; break;
+        case 'j': case KEY_DOWN: if (selection_index < search_results.size() - 1) selection_index++; break;
+        case 'G': selection_index = search_results.size() - 1; break;
+        case 'g': if (last_key == 'g') selection_index = 0; break;
+        case 'l':
         case 10: // Enter
             if (!search_results.empty()) {
                 show_message("Resolving...");
@@ -617,21 +718,21 @@ void UI::handle_search_results_input(int ch) {
                 
                 try {
                     player.stop(); // Stop current playback
-                    show_message("Resolving stream...");
-                    wnoutrefresh(help_win);
-                    doupdate();
-                    std::string stream_url = get_youtube_stream_url(search_results[selection_index].url);
                     
-                    fetch_current_lyrics(search_results[selection_index].title); // Fetch BEFORE loading/playing
+                    fetch_current_lyrics(search_results[selection_index].title, search_results[selection_index].url); // Fetch lyrics
                     
-                    player.load(stream_url);
-                    last_played_path = stream_url;
+                    player.load(search_results[selection_index].url);
+                    last_played_path = search_results[selection_index].url;
                     player.set_property("force-media-title", search_results[selection_index].title);
                     
                     // Set autoplay context
                     
                     // Set autoplay context
-                    playing_index = selection_index;
+                    play_queue.clear();
+                    for (const auto& res : search_results) {
+                        play_queue.push_back({res.title, res.url, res.duration});
+                    }
+                    queue_index = selection_index;
                     is_playing_from_playlist = false;
                     
                     player.play();
@@ -792,13 +893,13 @@ void UI::draw_playlist_view() {
 void UI::handle_playlists_input(int ch) {
     switch (ch) {
         case 27: set_mode(AppMode::PLAYBACK); break;
-        case KEY_UP: 
+        case 'k': case KEY_UP: 
             if (selection_index > 0) {
                 selection_index--; 
                 update_preview_songs();
             }
             break;
-        case KEY_DOWN: 
+        case 'j': case KEY_DOWN: 
             if (selection_index < playlists.size() - 1) {
                 selection_index++; 
                 update_preview_songs();
@@ -854,6 +955,32 @@ void UI::handle_playlists_input(int ch) {
             }
             break;
         }
+        case 'e': case 'E': {
+            if (playlists.empty()) break;
+            std::string name = playlists[selection_index].name;
+            std::string home = getenv("HOME");
+            std::string out_path = home + "/Music/" + name + ".m3u";
+            if (playlist_manager.export_to_m3u(name, out_path)) {
+                show_message("Exported to " + out_path);
+            } else {
+                show_message("Failed to export playlist.");
+            }
+            break;
+        }
+        case 'G':
+            if (!playlists.empty()) {
+                selection_index = playlists.size() - 1;
+                update_preview_songs();
+            }
+            break;
+        case 'g':
+            if (last_key == 'g') {
+                selection_index = 0;
+                update_preview_songs();
+            }
+            break;
+        case 'h': set_mode(AppMode::PLAYBACK); break;
+        case 'l':
         case 10: // Enter
             if (!playlists.empty()) {
                 current_playlist_name = playlists[selection_index].name;
@@ -871,8 +998,8 @@ void UI::handle_playlist_view_input(int ch) {
             playlists = playlist_manager.list_playlists();
             set_mode(AppMode::PLAYLIST_BROWSER); 
             break;
-        case KEY_UP: if (selection_index > 0) selection_index--; break;
-        case KEY_DOWN: if (selection_index < current_playlist_songs.size() - 1) selection_index++; break;
+        case 'k': case KEY_UP: if (selection_index > 0) selection_index--; break;
+        case 'j': case KEY_DOWN: if (selection_index < current_playlist_songs.size() - 1) selection_index++; break;
         case 'd': case 'D':
             if (!current_playlist_songs.empty()) {
                 playlist_manager.remove_song_from_playlist(current_playlist_name, selection_index);
@@ -891,6 +1018,14 @@ void UI::handle_playlist_view_input(int ch) {
                 set_mode(AppMode::PLAYLIST_SELECT_FOR_MOVE);
             }
             break;
+        case 'G': selection_index = current_playlist_songs.size() - 1; break;
+        case 'g': if (last_key == 'g') selection_index = 0; break;
+        case 'h':
+            playlists = playlist_manager.list_playlists();
+            selection_index = 0;
+            set_mode(AppMode::PLAYLIST_BROWSER);
+            break;
+        case 'l':
         case 10: // Enter
             if (!current_playlist_songs.empty()) {
                 show_message("Resolving...");
@@ -898,16 +1033,16 @@ void UI::handle_playlist_view_input(int ch) {
                 doupdate();
                 try {
                     player.stop(); // Stop current playback
-                    fetch_current_lyrics(current_playlist_songs[selection_index].title); // Fetch BEFORE loading/playing
+                    fetch_current_lyrics(current_playlist_songs[selection_index].title, current_playlist_songs[selection_index].url);
                     
-                    std::string stream_url = get_youtube_stream_url(current_playlist_songs[selection_index].url);
-                    player.load(stream_url);
-                    last_played_path = stream_url;
+                    player.load(current_playlist_songs[selection_index].url);
+                    last_played_path = current_playlist_songs[selection_index].url;
                     player.set_property("force-media-title", current_playlist_songs[selection_index].title);
                     playing_playlist_name = current_playlist_name;
                     
                     // Set autoplay context
-                    playing_index = selection_index;
+                    play_queue = current_playlist_songs;
+                    queue_index = selection_index;
                     is_playing_from_playlist = true;
                     
                     player.play();
@@ -1034,21 +1169,19 @@ void UI::draw_intro() {
         if (start_x < 0) start_x = 0;
         mvwprintw(main_win, start_y + i, start_x, "%s", ascii_art[i].c_str());
     }
-    wattroff(main_win, COLOR_PAIR(1) | A_BOLD);
+    wattroff(main_win, COLOR_PAIR(1));
     
-    std::string welcome = "Welcome to Vibe-Fi";
+    std::string welcome = "Vibe-Fi Terminal Music Player";
     mvwprintw(main_win, start_y + ascii_art.size() + 2, (width - welcome.length()) / 2, "%s", welcome.c_str());
     
-    std::string instruction = "Press [L] Library  [S] Search  [P] Playlists  [ESC] Quit";
+    std::string instruction = "Press [L] Library  [S] Search  [P] Playlists  [R] Resume Session  [ESC] Quit";
     mvwprintw(main_win, start_y + ascii_art.size() + 4, (width - instruction.length()) / 2, "%s", instruction.c_str());
     
     wnoutrefresh(main_win);
 }
 
 void UI::draw_lyrics() {
-    // Determine target window based on mode
     WINDOW* target_win = (mode == AppMode::LYRICS_VIEW) ? main_win : lyrics_win;
-    
     werase(target_win);
     draw_borders(target_win, "LYRICS");
     
@@ -1057,115 +1190,88 @@ void UI::draw_lyrics() {
     int text_h = height - 2;
     int text_w = width - 4;
     
+    int lyrics_w = text_w;
+    int lyrics_start = 2;
+
+    
     if (current_lyrics_data.has_synced) {
-        // Synced Lyrics Logic
         double current_time = player.get_position();
         int active_index = -1;
-        
-        // Find active line
         for (int i = 0; i < current_lyrics_data.synced_lyrics.size(); ++i) {
-            if (current_lyrics_data.synced_lyrics[i].timestamp <= current_time) {
-                active_index = i;
-            } else {
-                break;
-            }
+            if (current_lyrics_data.synced_lyrics[i].timestamp <= current_time) active_index = i;
+            else break;
         }
         
-        // Auto-scroll
         if (lyrics_auto_scroll && active_index != -1) {
-            // Try to center the active line
             int target_offset = active_index - (text_h / 2);
             if (target_offset < 0) target_offset = 0;
             lyrics_scroll_offset = target_offset;
         }
         
-        // Draw lines
         for (int i = 0; i < text_h; ++i) {
             int idx = i + lyrics_scroll_offset;
             if (idx >= current_lyrics_data.synced_lyrics.size()) break;
             
             if (idx == active_index) {
-                wattron(target_win, A_BOLD | COLOR_PAIR(2)); // Highlight active line
+                wattron(target_win, A_BOLD | COLOR_PAIR(2));
                 std::string line = "> " + current_lyrics_data.synced_lyrics[idx].text;
-                int start_x = (width - line.length()) / 2;
-                if (start_x < 0) start_x = 0;
+                int start_x = lyrics_start + (lyrics_w - line.length()) / 2;
+                if (start_x < lyrics_start) start_x = lyrics_start;
                 mvwprintw(target_win, i + 1, start_x, "%s", line.c_str());
                 wattroff(target_win, A_BOLD | COLOR_PAIR(2));
             } else {
                 std::string line = current_lyrics_data.synced_lyrics[idx].text;
-                int start_x = (width - line.length()) / 2;
-                if (start_x < 0) start_x = 0;
+                int start_x = lyrics_start + (lyrics_w - line.length()) / 2;
+                if (start_x < lyrics_start) start_x = lyrics_start;
                 mvwprintw(target_win, i + 1, start_x, "%s", line.c_str());
             }
         }
-        
     } else {
-        // Plain Lyrics Logic (Fallback)
-        // Check for error messages
         bool is_error = (current_lyrics_data.plain_lyrics.find("not found") != std::string::npos || 
                          current_lyrics_data.plain_lyrics.find("missing") != std::string::npos ||
                          current_lyrics_data.plain_lyrics.find("error") != std::string::npos);
-                         
         if (is_error) {
-            // Centered Error Display
             std::string error_msg = current_lyrics_data.plain_lyrics;
-            if (error_msg.length() > text_w) error_msg = error_msg.substr(0, text_w);
-            
+            if (error_msg.length() > lyrics_w) error_msg = error_msg.substr(0, lyrics_w);
             int start_y = height / 2;
-            int start_x = (width - error_msg.length()) / 2;
-            if (start_x < 0) start_x = 0;
-            
-            wattron(target_win, COLOR_PAIR(1) | A_BOLD); // Red/Warning color
+            int start_x = lyrics_start + (lyrics_w - error_msg.length()) / 2;
+            if (start_x < lyrics_start) start_x = lyrics_start;
+            wattron(target_win, COLOR_PAIR(1) | A_BOLD);
             mvwprintw(target_win, start_y, start_x, "%s", error_msg.c_str());
-            
-            // Draw a box around it? Maybe too much. Let's just make it bold red.
-            // Add a "Try searching manually?" hint below
-            std::string hint = "(Press 'S' to search for another version)";
-            int hint_x = (width - hint.length()) / 2;
-            if (hint_x < 0) hint_x = 0;
+            std::string hint = "(Press 'S' to search)";
+            int hint_x = lyrics_start + (lyrics_w - hint.length()) / 2;
+            if (hint_x < lyrics_start) hint_x = lyrics_start;
             wattroff(target_win, A_BOLD);
             mvwprintw(target_win, start_y + 2, hint_x, "%s", hint.c_str());
-            
             wattroff(target_win, COLOR_PAIR(1));
-            
         } else {
-            // Normal Plain Lyrics
             std::vector<std::string> lines;
             std::string current_line;
             for (char c : current_lyrics_data.plain_lyrics) {
-                if (c == '\n') {
-                    lines.push_back(current_line);
-                    current_line = "";
-                } else {
-                    current_line += c;
-                }
+                if (c == '\n') { lines.push_back(current_line); current_line = ""; }
+                else { current_line += c; }
             }
             lines.push_back(current_line);
-            
-            // Word wrap (simple)
             std::vector<std::string> wrapped_lines;
             for (const auto& line : lines) {
-                if (line.length() <= text_w) {
-                    wrapped_lines.push_back(line);
-                } else {
+                if (line.length() <= lyrics_w) wrapped_lines.push_back(line);
+                else {
                     std::string temp = line;
-                    while (temp.length() > text_w) {
-                        wrapped_lines.push_back(temp.substr(0, text_w));
-                        temp = temp.substr(text_w);
+                    while (temp.length() > lyrics_w) {
+                        wrapped_lines.push_back(temp.substr(0, lyrics_w));
+                        temp = temp.substr(lyrics_w);
                     }
                     wrapped_lines.push_back(temp);
                 }
             }
-            
             for (int i = 0; i < text_h && (i + lyrics_scroll_offset) < wrapped_lines.size(); ++i) {
                 std::string line = wrapped_lines[i + lyrics_scroll_offset];
-                int start_x = (width - line.length()) / 2;
-                if (start_x < 0) start_x = 0;
+                int start_x = lyrics_start + (lyrics_w - line.length()) / 2;
+                if (start_x < lyrics_start) start_x = lyrics_start;
                 mvwprintw(target_win, i + 1, start_x, "%s", line.c_str());
             }
         }
     }
-    
     wnoutrefresh(target_win);
 }
 
@@ -1198,57 +1304,37 @@ void UI::handle_intro_input(int ch) {
     } else if (ch == 'p' || ch == 'P') {
         playlists = playlist_manager.list_playlists();
         set_mode(AppMode::PLAYLIST_BROWSER);
+    } else if (ch == 'r' || ch == 'R') {
+        load_state();
     } else if (ch == 27 || ch == 'q' || ch == 'Q') { // ESC or Q
         running = false;
     }
 }
 
 void UI::play_next() {
-    if (playing_index == -1) return;
-    
-    int next_index = playing_index + 1;
-    std::string next_url;
-    std::string next_title;
-    
-    if (is_playing_from_playlist) {
-        if (next_index < current_playlist_songs.size()) {
-            next_url = current_playlist_songs[next_index].url;
-            next_title = current_playlist_songs[next_index].title;
-        } else {
-            // End of playlist
-            playing_index = -1;
-            show_message("End of playlist.");
-            return;
+    if (play_queue.empty() || queue_index < 0) return;
+    int next_index = queue_index + 1;
+    if (next_index < play_queue.size()) {
+        queue_index = next_index;
+        auto& song = play_queue[queue_index];
+        
+        try {
+            show_message("Autoplaying: " + song.title);
+            wnoutrefresh(help_win);
+            doupdate();
+            
+            player.stop();
+            fetch_current_lyrics(song.title, song.url);
+            player.load(song.url);
+            last_played_path = song.url;
+            player.set_property("force-media-title", song.title);
+            player.play();
+        } catch (const std::exception& e) {
+            show_message(std::string("Autoplay error: ") + e.what());
         }
     } else {
-        if (next_index < search_results.size()) {
-            next_url = search_results[next_index].url;
-            next_title = search_results[next_index].title;
-        } else {
-            // End of search results
-            playing_index = -1;
-            show_message("End of results.");
-            return;
-        }
-    }
-    
-    try {
-        show_message("Autoplaying next: " + next_title);
-        wnoutrefresh(help_win);
-        doupdate();
-        
-        player.stop(); // Stop current playback
-        std::string stream_url = get_youtube_stream_url(next_url);
-        fetch_current_lyrics(next_title); // Fetch BEFORE loading/playing
-        player.load(stream_url);
-        last_played_path = stream_url;
-        player.set_property("force-media-title", next_title);
-        player.play();
-        
-        playing_index = next_index;
-    } catch (const std::exception& e) {
-        show_message("Autoplay failed: " + std::string(e.what()));
-        playing_index = -1; // Stop autoplay on error
+        queue_index = -1;
+        show_message("End of queue.");
     }
 }
 
@@ -1310,7 +1396,7 @@ std::string UI::get_user_input(const std::string& prompt) {
     return input;
 }
 
-void UI::fetch_current_lyrics(std::string title_override) {
+void UI::fetch_current_lyrics(std::string title_override, std::string url_override) {
     std::string title = title_override;
     if (title.empty()) {
         title = player.get_metadata("media-title");
@@ -1337,6 +1423,10 @@ void UI::fetch_current_lyrics(std::string title_override) {
     if (artist.empty()) {
          artist = player.get_metadata("artist");
     }
+
+    if (discord_rpc) {
+        discord_rpc->update_presence(song_title, artist);
+    }
     
     // 3. If still no artist, use "Unknown" or just try to search with title if API allows (it usually needs artist)
     // But let's be smarter. If we have no artist, we can't really query the API effectively without one.
@@ -1358,4 +1448,235 @@ void UI::fetch_current_lyrics(std::string title_override) {
     
     lyrics_scroll_offset = 0;
     lyrics_auto_scroll = true;
+}
+
+void UI::load_themes() {
+    themes.push_back({"Midnight", COLOR_BLUE, COLOR_MAGENTA, COLOR_CYAN, COLOR_RED, -1, COLOR_CYAN, COLOR_BLACK});
+    themes.push_back({"Matrix", COLOR_GREEN, COLOR_GREEN, COLOR_GREEN, COLOR_RED, -1, COLOR_GREEN, COLOR_BLACK});
+    themes.push_back({"Nord", COLOR_CYAN, COLOR_BLUE, COLOR_WHITE, COLOR_RED, -1, COLOR_CYAN, COLOR_BLACK});
+}
+
+void UI::apply_theme() {
+    if (themes.empty()) return;
+    const Theme& t = themes[current_theme_idx];
+    init_pair(1, t.border_color, t.bg_color);
+    init_pair(2, t.progress_color, t.bg_color);
+    init_pair(3, t.visualizer_color, t.bg_color);
+    init_pair(4, t.alert_color, t.bg_color);
+    init_pair(5, t.bg_color, t.bg_color);
+    init_pair(6, t.selected_fg_color, t.selected_bg_color);
+}
+
+void UI::cycle_theme() {
+    if (themes.empty()) return;
+    current_theme_idx = (current_theme_idx + 1) % themes.size();
+    apply_theme();
+    show_message("Theme: " + themes[current_theme_idx].name);
+    clear();
+    refresh();
+}
+
+void UI::cycle_visualizer() {
+    int mode = static_cast<int>(current_visualizer_mode);
+    mode = (mode + 1) % 3;
+    current_visualizer_mode = static_cast<VisualizerMode>(mode);
+    std::string name = (mode == 0) ? "Stereo Bars" : (mode == 1) ? "Waveform" : "Pulse";
+    show_message("Visualizer: " + name);
+}
+
+void UI::play_previous() {
+    if (player.get_position() > 3.0) {
+        player.seek(0);
+        return;
+    }
+    if (queue_index > 0 && queue_index <= play_queue.size()) {
+        queue_index--;
+        auto& song = play_queue[queue_index];
+        
+        try {
+            show_message("Playing previous: " + song.title);
+            wnoutrefresh(help_win);
+            doupdate();
+            
+            player.stop();
+            fetch_current_lyrics(song.title, song.url);
+            player.load(song.url);
+            last_played_path = song.url;
+            player.set_property("force-media-title", song.title);
+            player.play();
+        } catch (const std::exception& e) {
+            show_message(std::string("Playback error: ") + e.what());
+        }
+    } else {
+        player.seek(0);
+    }
+}
+
+void UI::draw_queue() {
+    werase(main_win);
+    draw_borders(main_win, " Play Queue ");
+    
+    int height, width;
+    getmaxyx(main_win, height, width);
+    
+    if (play_queue.empty()) {
+        mvwprintw(main_win, 2, 2, "Queue is empty.");
+    } else {
+        int max_visible = height - 4;
+        for (int i = 0; i < max_visible && (i + scroll_offset) < play_queue.size(); ++i) {
+            int actual_idx = i + scroll_offset;
+            auto& song = play_queue[actual_idx];
+            
+            if (actual_idx == selection_index) {
+                wattron(main_win, COLOR_PAIR(4) | A_BOLD);
+            }
+            if (actual_idx == queue_index) {
+                mvwprintw(main_win, i + 2, 2, "> %s", song.title.c_str());
+            } else {
+                mvwprintw(main_win, i + 2, 2, "  %s", song.title.c_str());
+            }
+            if (actual_idx == selection_index) {
+                wattroff(main_win, COLOR_PAIR(4) | A_BOLD);
+            }
+        }
+    }
+    wnoutrefresh(main_win);
+}
+
+void UI::handle_queue_input(int ch) {
+    switch (ch) {
+        case 27: set_mode(AppMode::PLAYBACK); break;
+        case 'k': case KEY_UP:
+            if (selection_index > 0) {
+                selection_index--;
+                if (selection_index < scroll_offset) scroll_offset = selection_index;
+            }
+            break;
+        case 'j': case KEY_DOWN:
+            if (selection_index < play_queue.size() - 1) {
+                selection_index++;
+                int height, w; 
+                getmaxyx(main_win, height, w);
+                if (selection_index >= scroll_offset + height - 4) scroll_offset++;
+            }
+            break;
+        case 'G': {
+            selection_index = play_queue.size() - 1;
+            int h, w; getmaxyx(main_win, h, w);
+            scroll_offset = std::max(0, (int)play_queue.size() - (h - 4));
+            break;
+        }
+        case 'g':
+            if (last_key == 'g') {
+                selection_index = 0;
+                scroll_offset = 0;
+            }
+            break;
+        case 'h': set_mode(AppMode::PLAYBACK); break;
+        case 'd': case 'D':
+            if (!play_queue.empty() && selection_index < play_queue.size()) {
+                play_queue.erase(play_queue.begin() + selection_index);
+                if (selection_index < queue_index) queue_index--; // Adjust playing index
+                if (selection_index >= play_queue.size() && selection_index > 0) selection_index--;
+                show_message("Removed from queue.");
+            }
+            break;
+        case 'K':
+            if (selection_index > 0) {
+                std::swap(play_queue[selection_index], play_queue[selection_index - 1]);
+                if (queue_index == selection_index) queue_index--;
+                else if (queue_index == selection_index - 1) queue_index++;
+                selection_index--;
+                if (selection_index < scroll_offset) scroll_offset = selection_index;
+            }
+            break;
+        case 'J':
+            if (selection_index < play_queue.size() - 1) {
+                std::swap(play_queue[selection_index], play_queue[selection_index + 1]);
+                if (queue_index == selection_index) queue_index++;
+                else if (queue_index == selection_index + 1) queue_index--;
+                selection_index++;
+                int height, w; 
+                getmaxyx(main_win, height, w);
+                if (selection_index >= scroll_offset + height - 4) scroll_offset++;
+            }
+            break;
+        case 'l':
+        case 10: // Enter - play this song now
+            if (!play_queue.empty() && selection_index < play_queue.size()) {
+                queue_index = selection_index;
+                auto& song = play_queue[queue_index];
+                try {
+                    player.stop();
+                    fetch_current_lyrics(song.title, song.url);
+                    player.load(song.url);
+                    last_played_path = song.url;
+                    player.set_property("force-media-title", song.title);
+                    player.play();
+                } catch (const std::exception& e) {
+                    show_message(std::string("Playback error: ") + e.what());
+                }
+                set_mode(AppMode::PLAYBACK);
+            }
+            break;
+    }
+}
+
+void UI::save_state() {
+    std::string home = getenv("HOME");
+    std::string state_file = home + "/.vibe-fi-state.ini";
+    std::ofstream out(state_file);
+    if (out.is_open()) {
+        out << "path=" << last_played_path << "\n";
+        out << "position=" << player.get_position() << "\n";
+        out << "volume=" << player.get_volume() << "\n";
+        out << "playlist=" << current_playlist_name << "\n";
+        out << "index=" << playing_index << "\n";
+    }
+}
+
+void UI::load_state() {
+    std::string home = getenv("HOME");
+    std::string state_file = home + "/.vibe-fi-state.ini";
+    std::ifstream in(state_file);
+    if (!in.is_open()) {
+        show_message("No saved session found.");
+        return;
+    }
+    
+    std::string line;
+    std::string path = "";
+    double position = 0;
+    int volume = 100;
+    std::string playlist = "";
+    int index = -1;
+    
+    while (std::getline(in, line)) {
+        size_t eq = line.find('=');
+        if (eq != std::string::npos) {
+            std::string key = line.substr(0, eq);
+            std::string val = line.substr(eq + 1);
+            if (key == "path") path = val;
+            else if (key == "position") position = std::stod(val);
+            else if (key == "volume") volume = std::stoi(val);
+            else if (key == "playlist") playlist = val;
+            else if (key == "index") index = std::stoi(val);
+        }
+    }
+    
+    if (!path.empty()) {
+        show_message("Resuming session...");
+        doupdate();
+        fetch_current_lyrics("", path);
+        player.set_property("start", std::to_string(position));
+        player.load(path);
+        player.set_property("start", "0"); // Reset for future loads
+        player.set_volume(volume);
+        last_played_path = path;
+        current_playlist_name = playlist;
+        playing_index = index;
+        set_mode(AppMode::PLAYBACK);
+    } else {
+        show_message("State file is empty.");
+    }
 }

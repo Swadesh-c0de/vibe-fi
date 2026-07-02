@@ -152,3 +152,19 @@ std::vector<PlaylistSong> PlaylistManager::get_playlist_songs(const std::string&
     
     return songs;
 }
+
+bool PlaylistManager::export_to_m3u(const std::string& playlist_name, const std::string& out_path) {
+    std::vector<PlaylistSong> songs = get_playlist_songs(playlist_name);
+    if (songs.empty()) return false;
+    
+    std::ofstream out(out_path);
+    if (!out.is_open()) return false;
+    
+    out << "#EXTM3U\n";
+    for (const auto& song : songs) {
+        out << "#EXTINF:-1," << song.title << "\n";
+        out << song.url << "\n";
+    }
+    
+    return true;
+}

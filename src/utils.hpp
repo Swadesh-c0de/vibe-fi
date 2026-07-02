@@ -13,4 +13,5 @@ std::string get_audio_duration(const std::string& path);
 std::string format_duration(double seconds);
 std::string sanitize_text(const std::string& text);
 
+
 #endif // UTILS_HPP

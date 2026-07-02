@@ -22,6 +22,7 @@ public:
 
 private:
     std::string root_path;
+    bool fuzzy_match(const std::string& pattern, const std::string& text);
 };
 
 #endif // LIBRARY_HPP

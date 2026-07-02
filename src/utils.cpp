@@ -11,28 +11,29 @@ bool is_url(const std::string& path) {
 }
 
 std::string get_youtube_stream_url(const std::string& url) {
+    if (!is_url(url)) return url;
+    
     std::string result;
-    // Added --force-ipv4 to help with network issues and --no-progress to avoid escape sequences
-    std::string cmd = "yt-dlp --no-progress --force-ipv4 -g -f bestaudio \"" + url + "\" 2>/dev/null";
+    // Use a slightly more robust command
+    std::string cmd = "yt-dlp --no-progress -f bestaudio -g \"" + url + "\" 2>/dev/null";
     
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) {
-        throw std::runtime_error("popen() failed!");
+        return "";
     }
     
-    // Read character by character to handle URLs of any length
-    int c;
-    while ((c = fgetc(pipe.get())) != EOF) {
-        result += static_cast<char>(c);
+    char buffer[1024];
+    if (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+        result = buffer;
     }
     
-    // Remove newline at the end
     if (!result.empty() && result.back() == '\n') {
         result.pop_back();
     }
     
     if (result.empty()) {
-        throw std::runtime_error("Failed to extract stream URL");
+        // Fallback to the URL itself if extraction fails, mpv might handle it via ytdl hook
+        return url;
     }
     
     return result;
@@ -83,3 +84,4 @@ std::string sanitize_text(const std::string& text) {
     }
     return result;
 }
+

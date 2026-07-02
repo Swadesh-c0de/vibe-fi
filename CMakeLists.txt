@@ -11,9 +11,10 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED mpv)
 pkg_check_modules(NCURSES REQUIRED ncurses)
+pkg_check_modules(DBUS REQUIRED dbus-1)
 
-include_directories(${MPV_INCLUDE_DIRS} ${NCURSES_INCLUDE_DIRS} src)
-link_directories(${MPV_LIBRARY_DIRS} ${NCURSES_LIBRARY_DIRS})
+include_directories(${MPV_INCLUDE_DIRS} ${NCURSES_INCLUDE_DIRS} ${DBUS_INCLUDE_DIRS} src)
+link_directories(${MPV_LIBRARY_DIRS} ${NCURSES_LIBRARY_DIRS} ${DBUS_LIBRARY_DIRS})
 
 add_executable(vibe_fi
     src/main.cpp
@@ -24,6 +25,8 @@ add_executable(vibe_fi
     src/library.cpp
     src/playlist_manager.cpp
     src/lyrics.cpp
+    src/mpris.cpp
+    src/discord_rpc.cpp
 )
 
-target_link_libraries(vibe_fi ${MPV_LIBRARIES} ${NCURSES_LIBRARIES})
+target_link_libraries(vibe_fi ${MPV_LIBRARIES} ${NCURSES_LIBRARIES} ${DBUS_LIBRARIES})

@@ -6,10 +6,31 @@
 #include "search.hpp"
 #include "playlist_manager.hpp"
 #include "lyrics.hpp"
+#include "discord_rpc.hpp"
 #include <string>
 #include <vector>
 #include <ncurses.h>
 #include <chrono>
+#include <thread>
+#include <atomic>
+#include <memory>
+
+enum class VisualizerMode {
+    STEREO_BARS,
+    WAVEFORM,
+    PULSE
+};
+
+struct Theme {
+    std::string name;
+    short border_color;
+    short progress_color;
+    short visualizer_color;
+    short alert_color;
+    short bg_color;
+    short selected_bg_color;
+    short selected_fg_color;
+};
 
 enum class AppMode {
     PLAYBACK,
@@ -21,6 +42,7 @@ enum class AppMode {
     PLAYLIST_SELECT_FOR_ADD,
     PLAYLIST_SELECT_FOR_MOVE,
     LYRICS_VIEW,
+    QUEUE_VIEW,
     INTRO
 };
 
@@ -49,6 +71,7 @@ private:
     Library library;
     PlaylistManager playlist_manager;
     LyricsManager lyrics_manager;
+    std::unique_ptr<DiscordRPC> discord_rpc;
     std::vector<LibraryItem> library_items;
     std::vector<SearchResult> search_results;
 
@@ -56,6 +79,10 @@ private:
     int scroll_offset;
     std::string search_query;
     std::string current_path;
+    
+    VisualizerMode current_visualizer_mode;
+    std::vector<Theme> themes;
+    int current_theme_idx;
     
     std::vector<Playlist> playlists;
     std::string current_playlist_name;
@@ -75,8 +102,11 @@ private:
     
     // Autoplay state
     bool autoplay_enabled;
-    int playing_index;
+    int playing_index; // Keep this for playlist updates if needed, or remove later
     bool is_playing_from_playlist;
+    
+    std::vector<PlaylistSong> play_queue;
+    int queue_index;
 
     void draw();
     void draw_playback();
@@ -87,15 +117,19 @@ private:
     void draw_playlist_view();
     void draw_playlist_select_for_add();
     void draw_lyrics();
+    void draw_queue();
     void draw_intro();
     
     // State for moving songs
     int song_to_move_index;
     std::string song_to_move_origin_playlist;
 
+    void save_state();
+    void load_state();
+    
     // Helpers
     void update_preview_songs();
-    void fetch_current_lyrics(std::string title_override = "");
+    void fetch_current_lyrics(std::string title_override = "", std::string url_override = "");
     void draw_borders(WINDOW* win, const std::string& title);
     
     void handle_input();
@@ -108,6 +142,7 @@ private:
     void handle_playlist_select_for_add_input(int ch);
     void handle_playlist_select_for_move_input(int ch);
     void handle_lyrics_input(int ch);
+    void handle_queue_input(int ch);
     void handle_intro_input(int ch);
 
 
@@ -116,11 +151,17 @@ private:
     void update_help();
     
     void play_next();
+    void play_previous();
     
     // Helper to create a window with a border
     WINDOW* create_window(int height, int width, int starty, int startx);
     
-    // Helper for user input
+    void load_themes();
+    void apply_theme();
+    void cycle_theme();
+    void cycle_visualizer();
+    
+    int last_key;
     std::string get_user_input(const std::string& prompt);
 
 };

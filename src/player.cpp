@@ -10,6 +10,9 @@ Player::Player() {
 
     // Set some default options if needed
     check_error(mpv_set_option_string(mpv, "vo", "null")); // Audio only
+    check_error(mpv_set_option_string(mpv, "ytdl", "yes")); // Enable YouTube support
+    check_error(mpv_set_option_string(mpv, "ytdl-format", "bestaudio/best")); // Prefer best audio
+    check_error(mpv_set_option_string(mpv, "script-opts", "ytdl_hook-ytdl_path=/usr/bin/yt-dlp"));
 
     check_error(mpv_initialize(mpv));
 }

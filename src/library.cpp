@@ -70,7 +70,7 @@ std::vector<LibraryItem> Library::search(const std::string& query) {
                 std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
                 std::transform(query_lower.begin(), query_lower.end(), query_lower.begin(), ::tolower);
                 
-                if (filename_lower.find(query_lower) != std::string::npos) {
+                if (fuzzy_match(query_lower, filename_lower)) {
                     std::string ext = entry.path().extension().string();
                     if (ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".m4a" || ext == ".ogg") {
                         LibraryItem item;
@@ -86,4 +86,16 @@ std::vector<LibraryItem> Library::search(const std::string& query) {
         std::cerr << "Error searching library: " << e.what() << std::endl;
     }
     return results;
+}
+
+bool Library::fuzzy_match(const std::string& pattern, const std::string& text) {
+    if (pattern.empty()) return true;
+    size_t i = 0, j = 0;
+    while (i < pattern.length() && j < text.length()) {
+        if (pattern[i] == text[j]) {
+            i++;
+        }
+        j++;
+    }
+    return i == pattern.length();
 }

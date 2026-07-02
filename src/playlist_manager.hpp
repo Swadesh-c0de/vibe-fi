@@ -27,6 +27,7 @@ public:
     bool move_song(const std::string& src_playlist, int src_index, const std::string& dest_playlist);
     bool add_song_to_playlist(const std::string& playlist_name, const PlaylistSong& song);
     void remove_song_from_playlist(const std::string& playlist_name, int index);
+    bool export_to_m3u(const std::string& playlist_name, const std::string& out_path);
     
     // Data retrieval
     std::vector<Playlist> list_playlists();

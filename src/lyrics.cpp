@@ -5,6 +5,8 @@
 #include <regex>
 #include <algorithm>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
 
 LyricsManager::LyricsManager() {}
 
@@ -29,11 +31,35 @@ LyricsData LyricsManager::fetch_lyrics(const std::string& artist, const std::str
         return escaped;
     };
 
-    std::string url = "https://lrclib.net/api/get?artist_name=" + url_encode(artist) + "&track_name=" + url_encode(title);
+    std::string safe_artist = url_encode(artist);
+    std::string safe_title = url_encode(title);
+    
+    std::string home = getenv("HOME");
+    std::string cache_dir = home + "/.vibe-fi/cache/lyrics/";
+    std::filesystem::create_directories(cache_dir);
+    std::string cache_file = cache_dir + safe_artist + "_" + safe_title + ".json";
+    
+    // Check cache
+    if (std::filesystem::exists(cache_file)) {
+        std::ifstream in(cache_file);
+        if (in.is_open()) {
+            std::stringstream buffer;
+            buffer << in.rdbuf();
+            return parse_json_response(buffer.str());
+        }
+    }
+
+    std::string url = "https://lrclib.net/api/get?artist_name=" + safe_artist + "&track_name=" + safe_title;
     std::string response = perform_request(url);
     
-    if (response.empty()) {
+    if (response.empty() || response.find("\"error\"") != std::string::npos) {
         return {"No lyrics found or network error.", {}, false};
+    }
+
+    // Save to cache
+    std::ofstream out(cache_file);
+    if (out.is_open()) {
+        out << response;
     }
 
     return parse_json_response(response);
