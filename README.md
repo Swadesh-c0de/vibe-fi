@@ -1,85 +1,157 @@
-# Vibe-Fi 🎵
+<div align="center">
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)
-![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
+<h1>VIBE-FI</h1>
 
-**Vibe-Fi** is an aesthetic, high-performance terminal-based music player designed for developers. It seamlessly integrates YouTube search, local library management, custom playlist management, synced lyrics display, retro visualizers, and desktop notifications into a cohesive and premium TUI experience.
+<p><strong>High-Performance Terminal Music Player</strong><br>
+<em>Engineered in modern C++17 with <code>libmpv</code> and <code>ncurses</code> for Linux and macOS.</em></p>
 
----
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="MIT License" /></a>
+  <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg?style=flat-square&logo=c%2B%2B" alt="C++17" />
+  <img src="https://img.shields.io/badge/Audio-libmpv-orange.svg?style=flat-square" alt="libmpv" />
+  <img src="https://img.shields.io/badge/UI-ncurses-yellow.svg?style=flat-square" alt="ncurses" />
+  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey.svg?style=flat-square" alt="Platform" />
+</p>
 
-## ✨ Features
-
-- **YouTube Streaming & Search**: Search and stream high-quality audio directly from YouTube.
-- **Local Library Browser**: Browse, queue, and play your local audio files.
-- **Advanced Playlist Management**:
-  - Create, rename, delete, and view custom playlists.
-  - Smart **Duplicate Prevention** for songs and playlist names.
-  - Easily **Add and Move songs** within or between playlists.
-- **Interactive Queue Manager**: View, navigate, and modify the upcoming track queue.
-- **Live Reacting Visualizer**: A beautiful terminal visualizer reacting dynamically to audio output with multiple modes:
-  - `Stereo Bars`: Standard left/right frequency bars.
-  - `Waveform`: Real-time wave oscillation line.
-  - `Pulse`: Center-outward pulsing visualizer.
-- **Synced Lyrics Fetching**: Automatically fetches and highlights synced lyrics using the `lrclib.net` API (cached locally in `~/.vibe-fi/cache/lyrics/` for offline use).
-- **Personalized Themes**: Switch dynamically between curated UI palettes:
-  - `Midnight`: Sleek dark-blue and purple layout.
-  - `Matrix`: Classic terminal green glow.
-  - `Nord`: Elegant arctic-blue and white.
-- **Desktop & OS Integrations**:
-  - **MPRIS Integration**: Connects via DBus (`dbus-1`) to enable media keys and tools like `playerctl` to control play, pause, next, and previous actions.
-  - **Discord Rich Presence (RPC)**: Automatically displays your current song and artist status on Discord via a custom Unix socket implementation.
-- **Autoplay**: Automatically transitions to the next song in the active queue or playlist.
+</div>
 
 ---
 
-## 🛠️ Tech Stack
-
-Vibe-Fi is engineered using lightweight and highly performance-oriented technologies:
-
-- **Core Language**: C++17 (for robustness, execution speed, and native OS APIs).
-- **Audio Engine**: **[libmpv](https://mpv.io/)** (client-side C API) to handle audio parsing, streaming, and decoding.
-- **Terminal UI**: **[ncurses](https://invisible-island.net/ncurses/)** for windows, menus, controls, and high-refresh visualizers.
-- **Desktop Integrations**:
-  - **D-Bus (`dbus-1`)** for standard Linux desktop MPRIS controls.
-  - Custom Unix Socket client for Discord RPC presence updating.
-- **Web APIs**: **[lrclib.net](https://lrclib.net/)** API fetched via `curl` subprocess calls.
-- **Helper Utilities**: `yt-dlp` for YouTube extraction, `ffmpeg` for media stream handling, and `stb_image.h` header utilities.
-- **Build System**: CMake (minimum version 3.10).
-
----
-
-## 📁 Project Structure
-
-Below is the directory layout and description of the source modules:
+## 📻 Overview
 
 ```
-vibe-fi/
-├── CMakeLists.txt              # CMake build configuration and dependency links
-├── LICENSE                     # MIT license file
-├── README.md                   # Project documentation
-├── install.sh                  # Automation script to install dependencies and compile
-└── src/                        # C++ Source files
-    ├── main.cpp                # App entrypoint; parses args and initializes UI & Player
-    ├── player.cpp / .hpp       # libmpv wrapper for media controls and audio properties
-    ├── ui.cpp / .hpp           # Ncurses drawing loops, input handlers, layouts, and themes
-    ├── mpris.cpp / .hpp        # D-Bus MPRIS server thread handling playerctl callbacks
-    ├── discord_rpc.cpp / .hpp  # IPC client writing song presence info to Discord local socket
-    ├── lyrics.cpp / .hpp       # Synced lyrics fetcher (caching curl calls to ~/.vibe-fi/)
-    ├── library.cpp / .hpp      # Local audio directory crawler and file list parser
-    ├── playlist_manager.cpp    # JSON-based playlist storage, validation, and modifiers
-    ├── search.cpp / .hpp       # YouTube search engine querying streams via yt-dlp
-    ├── utils.cpp / .hpp        # Common helpers (e.g. is_url, stream extract, string formatting)
-    └── stb_image.h             # Single-header image loader library (reserved/utility)
+╭─────────────────────────────────────────────────────────────────────────────╮
+│ VISUALIZER: NEON FLAME [♫ ● ○ ○ ○ ] [84% PEAK]                              │
+│                                                                             │
+│                 ✦              ✦                                            │
+│               ▂ █ ▅          ▅ █ ▂                                          │
+│           ▂ ▄ █ █ █ █      █ █ █ █ ▄ ▂                                      │
+│         ▃ █ █ █ █ █ █ █  █ █ █ █ █ █ █ ▃                                    │
+│ ─────────────────────────────────────────────────────────────────────────── │
+╰─────────────────────────────────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────────────────────────────────╮
+│ LYRICS: Bohemian Rhapsody — Queen                                           │
+│                                                                             │
+│     Is this the real life?                                                  │
+│     Is this just fantasy?                                                   │
+│   ▸ Caught in a landslide, no escape from reality ◂                         │
+│     Open your eyes, look up to the skies and see...                         │
+│                                                                             │
+╰─────────────────────────────────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────────────────────────────────╮
+│ [SPACE] Pause  [←/→] Seek  [S] Search  [L] Library  [P] Playlists  [V] Mode │
+╰─────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ---
 
-## 🚀 Installation
+## ⚡ Features
 
-### Automatic Installation (Recommended)
+- 📡 **Direct YouTube Streaming**: Stream audio directly through `yt-dlp` without downloading or rendering video streams.
+- 🗂️ **Local Audio Library**: Non-blocking browser supporting FLAC, MP3, WAV, M4A, OGG, Opus, AAC, ALAC, and AIFF with in-memory metadata caching.
+- 🎙️ **Synced & Plain Lyrics**: Fetches timestamped `.lrc` and plain lyrics from `lrclib.net` with live auto-scrolling and local caching.
+- 🌊 **Audio-Reactive Visualizers**: 3 dynamic modes (`Neon Flame`, `Stereo Bars`, and `Pulse`) rendered using UTF-8 fractional sub-blocks and gravity-accelerated peak caps.
+- 🎚️ **D-Bus MPRIS Support**: Native media key and system remote control integration (`playerctl`) through a decoupled, thread-safe message queue.
+- 👾 **Discord Rich Presence**: Real-time track status on your Discord profile via native Unix IPC sockets without external SDK bloat.
+- 📑 **Smart Playlist Management**: Create, reorder, delete, and move songs across playlists, with one-click export to standard `.m3u` files.
+- ⏱️ **Session Persistence**: Saves volume, playback position, and track history. Press <kbd>R</kbd> on startup to restore playback and lyrics immediately.
 
-The installation script automatically detects your distribution/OS, installs standard system dependencies, and builds the codebase:
+---
+
+## 📐 Architecture
+
+Vibe-Fi follows a modular, domain-driven architecture designed for high throughput and zero UI stutter:
+
+```
+                             +-------------------+
+                             |     main.cpp      |
+                             |  (CLI Bootstrap)  |
+                             +---------+---------+
+                                       |
+                   +-------------------+-------------------+
+                   |                                       |
+         +---------v---------+                   +---------v---------+
+         |     src/ui/       |                   |    src/core/      |
+         |   UI (ncurses)    |                   |  Player (libmpv)  |
+         +---------+---------+                   +---------+---------+
+                   |                                       |
+       +-----------+-----------+                           |
+       |                       |                           |
++------v------+       +--------v--------+         +--------v--------+
+|   Views     |       |   Visualizer    |<--------+ Audio Analysis  |
+| (Playback,  |       | (Physics Engine)|         | (@astats filter)|
+| Library,    |       +-----------------+         +-----------------+
+| Queue, etc) |
++------+------+
+       |
++------v-------------------------------------------------------+
+|                       src/services/                          |
+|  - Library: Local directory indexing & duration cache        |
+|  - Lyrics: lrclib.net synced/plain parser & disk cache       |
+|  - PlaylistManager: Custom lists (.txt) & M3U export         |
+|  - Search: Parameterized yt-dlp search query pipeline        |
++--------------------------------------------------------------+
+       |
++------v-------------------------------------------------------+
+|                     src/integrations/                        |
+|  - MPRIS: Thread-safe D-Bus interface for Linux media keys   |
+|  - Discord RPC: Native Unix domain socket IPC                |
++--------------------------------------------------------------+
+```
+
+### Subsystems
+
+| Module | Location | Responsibilities |
+| :--- | :--- | :--- |
+| 🎛️ **Audio Core** | `src/core/` | `libmpv` initialization, playback state, seeking, and real-time `@astats` audio filtering (RMS, peak, stereo split, and zero-crossing detection). |
+| 🌌 **Visualizer Engine** | `src/ui/visualizer.*` | Decoupled physics renderer. Calculates dynamic frequency spectrums, gravity peak caps, flutter harmonics, and the rhythmic header metronome. |
+| 🖥️ **Terminal UI** | `src/ui/ui.*` | Window hierarchy, theme color pairs, keyboard event loop, and viewport management. |
+| 📡 **Data Services** | `src/services/` | External integrations: `library` indexing, `lyrics` fetching, `playlist_manager` CRUD, and `search` query formatting. |
+| 🔌 **Desktop Integrations**| `src/integrations/`| System hooks: Linux `mpris` D-Bus media key listener and `discord_rpc` Unix IPC daemon. |
+| 🛠️ **Utilities** | `src/utils/` | String sanitation, shell argument escaping, dynamic executable discovery, and safe string-to-float conversions. |
+
+> [!TIP]
+> For in-depth technical documentation and subsystem lifecycles, see [ARCHITECTURE.md](ARCHITECTURE.md). For the AI agent mindmap, state transitions, and developer playbooks, see [AGENTS.md](AGENTS.md).
+
+---
+
+## 🧰 Requirements
+
+Ensure the following build tools and libraries are installed:
+
+- **C++ Compiler**: GCC (>= 8) or Clang (>= 7) supporting C++17
+- **Build System**: CMake (>= 3.16) and `pkg-config`
+- **Libraries**: `libmpv` and `ncurses` (with UTF-8 support)
+- **Runtime Tools**: `yt-dlp` (for YouTube extraction) and `ffmpeg` / `ffprobe`
+- **Optional**: `libdbus-1-dev` (Linux only, for media key controls)
+
+### Distribution Commands
+
+```bash
+# Arch Linux / Manjaro
+sudo pacman -S base-devel cmake mpv ncurses yt-dlp ffmpeg dbus pkgconf
+
+# Ubuntu / Debian / Mint
+sudo apt update && sudo apt install build-essential cmake libmpv-dev libncurses-dev libdbus-1-dev mpv ffmpeg yt-dlp curl pkg-config
+
+# Fedora / RHEL
+sudo dnf install gcc-c++ cmake mpv-devel ncurses-devel dbus-devel mpv ffmpeg yt-dlp curl pkgconf-pkg-config
+
+# openSUSE
+sudo zypper install gcc-c++ cmake mpv-devel ncurses-devel dbus-1-devel mpv ffmpeg yt-dlp curl pkg-config
+
+# macOS (Homebrew)
+brew install cmake mpv ncurses yt-dlp ffmpeg pkg-config
+```
+
+> [!NOTE]
+> On macOS, D-Bus MPRIS is automatically disabled at compile time. Audio playback, visualizers, library browsing, YouTube search, and Discord RPC function natively.
+
+---
+
+## 💿 Installation
+
+### Method 1: Automated Script (Recommended)
 
 ```bash
 git clone https://github.com/Swadesh-c0de/vibe-fi.git
@@ -88,96 +160,194 @@ chmod +x install.sh
 ./install.sh
 ```
 
-**Supported Environments:**
-- ✅ Arch Linux (and derivatives)
-- ✅ Ubuntu/Debian (and derivatives)
-- ✅ macOS (via Homebrew)
+### Method 2: Manual CMake Build
 
-### Manual Installation
+```bash
+git clone https://github.com/Swadesh-c0de/vibe-fi.git
+cd vibe-fi
 
-If you prefer to configure components yourself:
+# Configure release build
+cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-1. **Install Dependencies:**
-   - **Compilers**: `cmake`, `make`, `g++` (C++17 support)
-   - **Libraries**: `libmpv-dev`, `libncurses-dev`, `libdbus-1-dev`
-   - **CLI Tools**: `mpv`, `yt-dlp`, `ffmpeg`, `curl`
+# Build using all available cores
+cmake --build build -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+```
 
-2. **Build and Install:**
-   ```bash
-   mkdir build && cd build
-   cmake ..
-   make
-   sudo cp vibe_fi /usr/local/bin/vibe
-   ```
+### Installing the Binary
+
+```bash
+# Option A: Install for current user (no root required)
+mkdir -p ~/.local/bin
+install -m 755 ./build/vibe_fi ~/.local/bin/vibe
+
+# Option B: Install system-wide
+sudo cmake --install build --prefix /usr/local
+```
+
+### Uninstalling
+
+```bash
+# Current user:
+rm -f ~/.local/bin/vibe
+
+# System-wide:
+sudo rm -f /usr/local/bin/vibe /usr/local/bin/vibe_fi
+```
 
 ---
 
-## 🎧 Usage & Keybindings
+## 🕹️ Usage
 
-Run the application:
 ```bash
+# Launch interactive dashboard
 vibe
+
+# Search YouTube and play top result immediately
+vibe "miles davis kind of blue"
+
+# Stream YouTube URL directly
+vibe "https://www.youtube.com/watch?v=5qap5aO4i9A"
+
+# Play local audio file
+vibe ~/Music/album/track01.flac
 ```
 
-Or play a URL / file directly from CLI:
-```bash
-vibe "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-```
+> [!TIP]
+> Passing search keywords directly from your terminal (`vibe "song name"`) automatically begins playback of the top hit and loads the remaining search results into your upcoming queue.
 
-### ⌨️ Global Controls & Navigation
+---
 
-- **ESC**: Go Back / Cancel / Quit (from main screens)
-- **Arrow Keys (Up/Down)**: Navigate list selections
-- **ENTER**: Select, open, or play selected item
+## ⌨️ Keybindings
 
-### Mode-Specific Keybindings
+### 🌐 Global Controls
 
-| Screen / Mode | Key | Action |
+| Key | Action |
+| :---: | :--- |
+| <kbd>ESC</kbd> | Return to previous screen / Cancel input / Exit view |
+| <kbd>↑</kbd> / <kbd>k</kbd> | Navigate up |
+| <kbd>↓</kbd> / <kbd>j</kbd> | Navigate down |
+| <kbd>ENTER</kbd> | Select item / Open directory / Play track |
+
+### 🎚️ Playback Screen
+
+| Key | Action |
+| :---: | :--- |
+| <kbd>SPACE</kbd> | Toggle Play / Pause |
+| <kbd>←</kbd> / <kbd>→</kbd> | Seek backward / forward 5 seconds |
+| <kbd>+</kbd> / <kbd>-</kbd> | Adjust volume |
+| <kbd>S</kbd> | Search YouTube |
+| <kbd>L</kbd> | Open local music library |
+| <kbd>P</kbd> | Open playlist manager |
+| <kbd>C</kbd> | View upcoming play queue |
+| <kbd>U</kbd> | Play from YouTube URL |
+| <kbd>V</kbd> | Cycle visualizer mode (`Neon Flame` ➔ `Stereo Bars` ➔ `Pulse`) |
+| <kbd>T</kbd> | Cycle color theme (`Midnight` ➔ `Matrix` ➔ `Nord`) |
+| <kbd>O</kbd> | Toggle autoplay (`ON` / `OFF`) |
+| <kbd>R</kbd> | Replay track from beginning (or resume last session from intro) |
+| <kbd>Q</kbd> | Jump to active playlist or search results list |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Manually scroll lyrics view |
+
+### 📚 Library & Playlists
+
+| Context | Key | Action |
 | :--- | :---: | :--- |
-| **Intro Screen** | `L` | Open Local Library |
-| | `S` | Start YouTube Search |
-| | `P` | Browse Playlists |
-| | `Q` / `ESC` | Quit Vibe-Fi |
-| **Playback Control** | `SPACE` | Play / Pause toggle |
-| | `←` / `→` | Seek backward / forward 5 seconds |
-| | `+` / `-` | Volume Up / Down (by 5%) |
-| | `Q` | Return to active queue (Playlist / Search Results) |
-| | `O` | Toggle Autoplay (ON / OFF) |
-| | `U` | Load and play a YouTube URL directly |
-| | `C` | View interactive Play Queue |
-| | `T` | Cycle UI Theme (`Midnight` ➔ `Matrix` ➔ `Nord`) |
-| | `V` | Cycle Visualizer Mode (`Stereo Bars` ➔ `Waveform` ➔ `Pulse`) |
-| | `R` | Replay the current track from beginning |
-| | `L` | Open Library |
-| | `S` | New YouTube Search |
-| | `P` | Open Playlists |
-| | `Arrow Up/Down`| Manual Lyrics Scroll |
-| **Search / Library** | `A` | Add selected track to a Playlist |
-| | `S` | Open a new Search query dialog |
-| **Playlists Panel** | `N` | Create a new Playlist |
-| | `R` | Rename selected Playlist |
-| | `D` | Delete selected Playlist |
-| **Playlist View** | `D` | Remove song from Playlist |
-| | `M` | Move song (reorder in playlist or transfer to another) |
+| **Library Browser** | <kbd>ENTER</kbd> | Play audio file / Enter directory |
+| | <kbd>BKSP</kbd> / <kbd>h</kbd> | Navigate to parent directory |
+| | <kbd>A</kbd> | Add highlighted file to a playlist |
+| **Playlist List** | <kbd>ENTER</kbd> | Open playlist to inspect tracks |
+| | <kbd>N</kbd> | Create a new playlist |
+| | <kbd>R</kbd> | Rename selected playlist |
+| | <kbd>D</kbd> | Delete selected playlist |
+| | <kbd>E</kbd> | Export playlist to `.m3u` format |
+| **Inside Playlist** | <kbd>ENTER</kbd> | Play selected track |
+| | <kbd>D</kbd> | Remove track from playlist |
+| | <kbd>M</kbd> | Move track to another playlist |
+| **Queue Screen** | <kbd>ENTER</kbd> | Jump to and play queued track |
+| | <kbd>D</kbd> | Remove item from upcoming queue |
 
 ---
 
-## 🛠️ Troubleshooting
+## 🌌 Visualizer Modes
 
-- **"Failed to extract stream URL"**: Usually occurs when a YouTube video is region-restricted or age-gated. Try another search result.
-- **Audio Output Issues**: Ensure your system audio server (PipeWire, PulseAudio, or ALSA) is working and verify that `mpv --version` works in the console.
-- **yt-dlp Errors**: Update the YouTube parser to the latest stream decryption rules:
-  ```bash
-  sudo yt-dlp -U
-  ```
+Press <kbd>V</kbd> to cycle between visualizer engines:
+
+1. 🔥 **Neon Flame** *(Default)*:
+   - Symmetrical center-outward frequency distribution.
+   - Bass transients and kicks erupt upward in the center columns.
+   - Vocal midranges undulate on flanking columns.
+   - Hi-hats and percussion crackle at the outer wings.
+   - Real-time 4-beat header metronome indicator (`[♫ ● ○ ○ ○ ]`).
+   - Floating peak caps (`✦`, `▲`, `▔`) with gravity physics.
+
+2. 📊 **Stereo Bars**:
+   - Classic linear 8x sub-block graphic equalizer.
+   - Left channel drives the left half, right channel drives the right half.
+   - Floating peak hold bars.
+
+3. 💫 **Pulse**:
+   - Radial subwoofer ripple expanding dynamically on bass drops.
 
 ---
 
-## 📄 License & Credits
+## 🗄️ Storage & Configuration
 
-- Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
-- Special thanks to:
-  - **[libmpv](https://mpv.io/)** for the low-level media playback.
-  - **[ncurses](https://invisible-island.net/ncurses/)** for layout controls.
-  - **[lrclib.net](https://lrclib.net/)** for providing a free, open-source synced lyrics catalog.
-  - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** for stream metadata resolution.
+Vibe-Fi stores user data, playlist files, and caches under `~/.vibe-fi/`:
+
+```
+~/.vibe-fi/
+├── state.ini                   # Saved session: track URL/path, position, volume, active playlist
+├── playlists/                  # Plaintext playlist files (Title|URL|Duration)
+│   ├── Chill.txt
+│   └── Favorites.txt
+└── cache/
+    └── lyrics/                 # Cached LRC and JSON files from lrclib.net
+        └── Queen_Bohemian+Rhapsody.json
+```
+
+- **Resuming Sessions**: Press <kbd>R</kbd> on the welcome screen to reload the exact track, volume, seek position, and synchronized lyrics from `state.ini`.
+- **Portable Playlists**: Playlists are simple line-delimited text files. Copy the `~/.vibe-fi/playlists/` directory to back up or migrate playlists across systems.
+
+---
+
+## 🩺 Diagnostics & Troubleshooting
+
+### 📡 `yt-dlp` returns extraction errors or 403 Forbidden
+YouTube frequently updates video stream ciphers. Update `yt-dlp` to the latest release:
+```bash
+# Package manager:
+sudo pacman -Syu yt-dlp         # Arch Linux
+sudo apt install --only-upgrade yt-dlp  # Ubuntu/Debian
+
+# Direct binary:
+sudo yt-dlp -U
+```
+
+### ⏯️ Media keys (`playerctl`) not responding on Linux
+Verify the D-Bus service is registered:
+```bash
+playerctl -l
+# Should list: vibe_fi
+
+# Test remote control:
+playerctl --player=vibe_fi play-pause
+playerctl --player=vibe_fi next
+```
+
+### 🎮 Discord Rich Presence not displaying
+1. Verify the official Discord desktop client is open and logged in.
+2. In Discord Settings: **Activity Privacy** ➔ Enable **Display current activity as a status message**.
+3. On Linux, ensure `XDG_RUNTIME_DIR` is set (`echo $XDG_RUNTIME_DIR`).
+
+### 🔲 Terminal borders or blocks look distorted
+Set your terminal locale to UTF-8 with 256-color support:
+```bash
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export TERM=xterm-256color
+```
+
+---
+
+## 📜 License
+
+Distributed under the [MIT License](LICENSE).

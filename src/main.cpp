@@ -1,46 +1,88 @@
 #include "player.hpp"
 #include "ui.hpp"
 #include "utils.hpp"
+#include "search.hpp"
 #include <iostream>
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <clocale>
 
 namespace fs = std::filesystem;
 
+static void print_help(const char* prog_name) {
+    std::cout << "Vibe-Fi - Terminal Music Player for Developers (v1.1.0)\n\n"
+              << "Usage:\n"
+              << "  " << prog_name << "                      Launch interactive player\n"
+              << "  " << prog_name << " <url>                Stream YouTube audio directly\n"
+              << "  " << prog_name << " <file>               Play local audio file\n"
+              << "  " << prog_name << " <search query>       Search and play track from YouTube\n"
+              << "  " << prog_name << " --help | -h          Show this help message\n"
+              << "  " << prog_name << " --version | -v       Show version information\n\n"
+              << "Controls:\n"
+              << "  SPACE       Play / Pause toggle\n"
+              << "  Left/Right  Seek backward / forward 5s\n"
+              << "  +/-         Volume adjustment\n"
+              << "  S           Search YouTube\n"
+              << "  L           Browse Local Music Library\n"
+              << "  P           Manage Playlists\n"
+              << "  C           Interactive Play Queue\n"
+              << "  T           Cycle Themes (Midnight, Matrix, Nord)\n"
+              << "  V           Cycle Visualizers (Neon Flame, Stereo Bars, Pulse)\n"
+              << "  ESC / Q     Back / Quit\n";
+}
+
 int main(int argc, char* argv[]) {
+    std::setlocale(LC_ALL, "");
+    std::setlocale(LC_NUMERIC, "C"); // libmpv requires LC_NUMERIC to remain "C"
     std::vector<std::string> startup_errors;
+    std::vector<SearchResult> initial_queue;
+
+    // Check for help or version flags
+    if (argc > 1) {
+        std::string arg = argv[1];
+        if (arg == "--help" || arg == "-h") {
+            print_help(argv[0]);
+            return 0;
+        }
+        if (arg == "--version" || arg == "-v") {
+            std::cout << "Vibe-Fi version 1.1.0 (C++17, libmpv, ncurses)\n";
+            return 0;
+        }
+    }
+
     try {
         Player player;
         bool start_playback = false;
 
-        
         for (int i = 1; i < argc; ++i) {
             std::string input = argv[i];
-
-            
             std::string url_to_play = input;
+
             if (is_url(input)) {
-                std::cout << "Resolving URL: " << input << "..." << std::endl;
+                std::cout << "Resolving stream URL: " << input << "..." << std::endl;
                 try {
                     url_to_play = get_youtube_stream_url(input);
                 } catch (const std::exception& e) {
-                    std::cerr << "Error resolving URL " << input << ": " << e.what() << std::endl;
-                    startup_errors.push_back("Failed: " + input);
-                    continue; 
+                    startup_errors.push_back("Failed to resolve URL: " + input);
+                    continue;
                 }
+            } else if (fs::exists(input)) {
+                // Local file exists
+                url_to_play = fs::absolute(input).string();
             } else {
-                if (!fs::exists(input)) {
-                    // Treat as search query if not a file
-                    std::cout << "Searching for: " << input << "..." << std::endl;
-                    // We can't easily do "Search & Play" here without instantiating Search
-                    // So let's just warn for now or assume it's a file error
-                     std::cerr << "File not found: " << input << std::endl;
-                     startup_errors.push_back("Not Found: " + input);
-                     continue;
+                // Treat non-file input as YouTube search query
+                std::cout << "Searching YouTube for: " << input << "..." << std::endl;
+                auto search_hits = search_youtube(input, 5);
+                if (!search_hits.empty()) {
+                    url_to_play = search_hits.front().url;
+                    initial_queue = search_hits;
+                } else {
+                    startup_errors.push_back("No results for: " + input);
+                    continue;
                 }
             }
-            
+
             try {
                 if (!start_playback) {
                     player.load(url_to_play, "replace");
@@ -49,25 +91,32 @@ int main(int argc, char* argv[]) {
                     player.load(url_to_play, "append-play");
                 }
             } catch (const std::exception& e) {
-                startup_errors.push_back("Load Error: " + std::string(e.what()));
+                startup_errors.push_back("Load error: " + std::string(e.what()));
             }
         }
-        
-        if (start_playback) player.play(); 
+
+        if (start_playback) {
+            player.play();
+        }
 
         UI ui(player);
-        
+
         if (!start_playback && argc == 1) {
             ui.set_mode(AppMode::INTRO);
+        } else if (start_playback) {
+            ui.set_mode(AppMode::PLAYBACK);
+            if (!initial_queue.empty()) {
+                ui.set_initial_queue(initial_queue);
+            }
         }
-        
+
         for (const auto& err : startup_errors) {
             ui.show_message(err);
         }
-        
+
         ui.run();
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "Fatal Error: " << e.what() << std::endl;
         return 1;
     }
 

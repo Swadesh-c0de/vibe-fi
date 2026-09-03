@@ -4,10 +4,23 @@
 #include <string>
 #include <mpv/client.h>
 
+struct AudioLevelStats {
+    float rms_overall = 0.0f;     // Normalized perceived loudness (0.0 to 1.0)
+    float peak_overall = 0.0f;    // Normalized instantaneous peak hit (0.0 to 1.0)
+    float rms_left = 0.0f;        // Left channel loudness (0.0 to 1.0)
+    float rms_right = 0.0f;       // Right channel loudness (0.0 to 1.0)
+    float zero_crossings = 0.05f; // Pitch / tone estimator (low = deep bass, high = bright/harsh)
+    bool valid = false;
+};
+
 class Player {
 public:
     Player();
     ~Player();
+
+    // Player instances manage a raw mpv handle, non-copyable
+    Player(const Player&) = delete;
+    Player& operator=(const Player&) = delete;
 
     void load(const std::string& path, const std::string& mode = "replace");
     void play();
@@ -25,6 +38,7 @@ public:
     void set_volume(int volume);
     std::string get_metadata(const std::string& key);
     void set_property(const std::string& name, const std::string& value);
+    AudioLevelStats get_audio_stats();
 
 private:
     mpv_handle* mpv;

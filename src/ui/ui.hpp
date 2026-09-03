@@ -1,25 +1,18 @@
 #ifndef UI_HPP
 #define UI_HPP
-#pragma once
+
 #include "player.hpp"
 #include "library.hpp"
 #include "search.hpp"
 #include "playlist_manager.hpp"
 #include "lyrics.hpp"
 #include "discord_rpc.hpp"
+#include "visualizer.hpp"
 #include <string>
 #include <vector>
 #include <ncurses.h>
 #include <chrono>
-#include <thread>
-#include <atomic>
 #include <memory>
-
-enum class VisualizerMode {
-    STEREO_BARS,
-    WAVEFORM,
-    PULSE
-};
 
 struct Theme {
     std::string name;
@@ -51,9 +44,14 @@ public:
     UI(Player& player);
     ~UI();
     
+    // Disable copy
+    UI(const UI&) = delete;
+    UI& operator=(const UI&) = delete;
+
     void run();
     void show_message(const std::string& msg);
     void set_mode(AppMode mode);
+    void set_initial_queue(const std::vector<SearchResult>& results);
 
 private:
     Player& player;
@@ -88,10 +86,12 @@ private:
     std::string current_playlist_name;
     std::string playing_playlist_name;
     std::vector<PlaylistSong> current_playlist_songs;
-    std::vector<PlaylistSong> preview_songs; // For side-by-side view
+    std::vector<PlaylistSong> preview_songs;
     PlaylistSong song_to_add;
     
     LyricsData current_lyrics_data;
+    std::string current_lyrics_title;
+    Visualizer visualizer;
     int lyrics_scroll_offset;
     bool lyrics_auto_scroll;
     
@@ -100,14 +100,15 @@ private:
     
     std::string last_played_path;
     
-    // Autoplay state
+    // Autoplay & queue state
     bool autoplay_enabled;
-    int playing_index; // Keep this for playlist updates if needed, or remove later
+    int playing_index;
     bool is_playing_from_playlist;
     
     std::vector<PlaylistSong> play_queue;
     int queue_index;
 
+    // Drawing methods
     void draw();
     void draw_playback();
     void draw_library();
@@ -132,6 +133,7 @@ private:
     void fetch_current_lyrics(std::string title_override = "", std::string url_override = "");
     void draw_borders(WINDOW* win, const std::string& title);
     
+    // Input handling
     void handle_input();
     void handle_playback_input(int ch);
     void handle_library_input(int ch);
@@ -145,7 +147,6 @@ private:
     void handle_queue_input(int ch);
     void handle_intro_input(int ch);
 
-
     void update_visualizer();
     void update_status();
     void update_help();
@@ -153,7 +154,6 @@ private:
     void play_next();
     void play_previous();
     
-    // Helper to create a window with a border
     WINDOW* create_window(int height, int width, int starty, int startx);
     
     void load_themes();
@@ -163,7 +163,6 @@ private:
     
     int last_key;
     std::string get_user_input(const std::string& prompt);
-
 };
 
 #endif // UI_HPP

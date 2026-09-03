@@ -1,16 +1,18 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e  # Exit on error
 
-echo "============"
-echo "  Vibe-Fi"
-echo "============"
+echo "======================================"
+echo "          Vibe-Fi Installer           "
+echo "  Terminal Music Player for Developers"
+echo "======================================"
 echo ""
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Detect OS
@@ -18,11 +20,16 @@ detect_os() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
         echo "macos"
     elif [[ -f /etc/os-release ]]; then
+        # shellcheck disable=SC1091
         . /etc/os-release
         if [[ "$ID" == "arch" ]] || [[ "$ID_LIKE" == *"arch"* ]]; then
             echo "arch"
-        elif [[ "$ID" == "ubuntu" ]] || [[ "$ID" == "debian" ]] || [[ "$ID_LIKE" == *"debian"* ]]; then
+        elif [[ "$ID" == "ubuntu" ]] || [[ "$ID" == "debian" ]] || [[ "$ID_LIKE" == *"debian"* ]] || [[ "$ID_LIKE" == *"ubuntu"* ]]; then
             echo "ubuntu"
+        elif [[ "$ID" == "fedora" ]] || [[ "$ID_LIKE" == *"fedora"* ]] || [[ "$ID_LIKE" == *"rhel"* ]]; then
+            echo "fedora"
+        elif [[ "$ID" == "opensuse"* ]] || [[ "$ID_LIKE" == *"suse"* ]]; then
+            echo "opensuse"
         else
             echo "unknown"
         fi
@@ -32,8 +39,7 @@ detect_os() {
 }
 
 OS=$(detect_os)
-
-echo -e "${GREEN}Detected OS: $OS${NC}"
+echo -e "${GREEN}Detected Platform:${NC} ${CYAN}$OS${NC}"
 echo ""
 
 # Install dependencies based on OS
@@ -41,93 +47,95 @@ install_dependencies() {
     case $OS in
         arch)
             echo -e "${YELLOW}Installing dependencies for Arch Linux...${NC}"
-            sudo pacman -Sy --needed --noconfirm base-devel cmake mpv ncurses yt-dlp ffmpeg
+            sudo pacman -Sy --needed --noconfirm base-devel cmake mpv ncurses yt-dlp ffmpeg dbus pkgconf
             ;;
         ubuntu)
             echo -e "${YELLOW}Installing dependencies for Ubuntu/Debian...${NC}"
             sudo apt update
-            sudo apt install -y build-essential cmake libmpv-dev libncurses-dev mpv ffmpeg python3 curl nodejs
+            sudo apt install -y build-essential cmake libmpv-dev libncurses-dev libdbus-1-dev mpv ffmpeg python3 curl pkg-config
             
-            # Install yt-dlp (not in default repos for older Ubuntu)
+            # Install yt-dlp if not available or old
             if ! command -v yt-dlp &> /dev/null; then
-                echo -e "${YELLOW}Installing yt-dlp...${NC}"
-                sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
+                echo -e "${YELLOW}Installing latest yt-dlp release...${NC}"
+                sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
                 sudo chmod a+rx /usr/local/bin/yt-dlp
             fi
-            
-            # Verify yt-dlp installation
-            if ! yt-dlp --version &> /dev/null; then
-                echo -e "${RED}Error: yt-dlp failed to run. Please check if python3 is installed correctly.${NC}"
-                exit 1
-            fi
+            ;;
+        fedora)
+            echo -e "${YELLOW}Installing dependencies for Fedora / RHEL...${NC}"
+            sudo dnf install -y gcc-c++ cmake mpv-devel ncurses-devel dbus-devel mpv ffmpeg yt-dlp curl pkgconf-pkg-config
+            ;;
+        opensuse)
+            echo -e "${YELLOW}Installing dependencies for openSUSE...${NC}"
+            sudo zypper install -y gcc-c++ cmake mpv-devel ncurses-devel dbus-1-devel mpv ffmpeg yt-dlp curl pkg-config
             ;;
         macos)
             echo -e "${YELLOW}Installing dependencies for macOS...${NC}"
-            
-            # Check if Homebrew is installed
             if ! command -v brew &> /dev/null; then
                 echo -e "${RED}Homebrew not found. Please install Homebrew first:${NC}"
                 echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
                 exit 1
             fi
-            
             brew install cmake mpv ncurses yt-dlp ffmpeg pkg-config
             ;;
         *)
-            echo -e "${RED}Unsupported OS. Please install dependencies manually:${NC}"
-            echo "  - cmake"
-            echo "  - mpv (and libmpv-dev)"
-            echo "  - ncurses (and libncurses-dev)"
+            echo -e "${RED}Unsupported or undetected distribution.${NC}"
+            echo "Please ensure the following packages are installed on your system:"
+            echo "  - C++17 compiler (g++ / clang++)"
+            echo "  - cmake (>= 3.16)"
+            echo "  - libmpv (and dev headers)"
+            echo "  - ncurses (and dev headers)"
+            echo "  - libdbus-1-dev (Linux only, optional)"
             echo "  - yt-dlp"
             echo "  - ffmpeg"
-            echo "  - build tools (gcc/g++ or clang)"
-            exit 1
+            echo "  - curl"
             ;;
     esac
+
+    # Verify yt-dlp installation
+    if command -v yt-dlp &> /dev/null; then
+        echo -e "${GREEN}yt-dlp detected:${NC} $(yt-dlp --version 2>/dev/null || echo 'OK')"
+    else
+        echo -e "${YELLOW}Warning: yt-dlp not found in PATH. YouTube streaming will be limited until yt-dlp is installed.${NC}"
+    fi
 }
 
 # Build the application
 build_app() {
     echo ""
-    echo -e "${YELLOW}Building Vibe-Fi...${NC}"
+    echo -e "${YELLOW}Configuring and building Vibe-Fi...${NC}"
     
-    # Clean previous build
     rm -rf build
-    mkdir -p build
-    cd build
+    cmake -B build -DCMAKE_BUILD_TYPE=Release
     
-    # Configure and build
-    cmake ..
-    make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+    CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+    cmake --build build -j"$CORES"
     
-    cd ..
-    
-    echo -e "${GREEN}Build successful!${NC}"
+    echo -e "${GREEN}Build completed successfully!${NC}"
 }
 
 # Install the binary
 install_binary() {
     echo ""
-    read -p "Install to /usr/local/bin? (y/n) " -n 1 -r
+    read -p "Install 'vibe' system-wide to /usr/local/bin? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${YELLOW}Installing vibe-fi to /usr/local/bin...${NC}"
-        sudo cp build/vibe_fi /usr/local/bin/vibe
-        sudo chmod +x /usr/local/bin/vibe
-        echo -e "${GREEN}Installed! You can now run 'vibe' from anywhere.${NC}"
+        echo -e "${YELLOW}Installing to /usr/local/bin...${NC}"
+        sudo cmake --install build --prefix /usr/local
+        echo -e "${GREEN}Installed successfully! You can now launch Vibe-Fi by typing 'vibe'.${NC}"
     else
         echo -e "${YELLOW}Skipping system installation.${NC}"
-        echo -e "You can run the app with: ${GREEN}./build/vibe_fi${NC}"
+        echo -e "You can run the application directly from: ${GREEN}./build/vibe_fi${NC}"
     fi
 }
 
-# Main installation flow
+# Main execution flow
 main() {
-    echo "Step 1: Installing dependencies..."
+    echo "Step 1: Checking and installing dependencies..."
     install_dependencies
     
     echo ""
-    echo "Step 2: Building application..."
+    echo "Step 2: Compiling Vibe-Fi..."
     build_app
     
     echo ""
@@ -136,25 +144,26 @@ main() {
     
     echo ""
     echo -e "${GREEN}======================================"
-    echo "  Installation Complete!"
+    echo "       Installation Complete!"
     echo "======================================${NC}"
     echo ""
     echo "Usage:"
-    if [[ -f /usr/local/bin/vibe ]]; then
-        echo "  Run: vibe"
+    if [[ -x /usr/local/bin/vibe ]]; then
+        echo "  vibe [query / url / audio_file]"
     else
-        echo "  Run: ./build/vibe"
+        echo "  ./build/vibe_fi [query / url / audio_file]"
     fi
     echo ""
-    echo "Controls:"
-    echo "  - Navigate with arrow keys"
-    echo "  - Press 'L' for Library"
-    echo "  - Press 'S' for Search"
-    echo "  - Press 'Q' to return to queue/results"
-    echo "  - Press 'R' to replay last track"
-    echo "  - Press ESC to quit"
+    echo "Keybindings:"
+    echo "  - [SPACE]    Play / Pause"
+    echo "  - [S]        YouTube Search"
+    echo "  - [L]        Local Audio Library"
+    echo "  - [P]        Custom Playlists"
+    echo "  - [C]        View Play Queue"
+    echo "  - [T]        Cycle Themes (Midnight / Matrix / Nord)"
+    echo "  - [V]        Cycle Visualizers (Neon Flame / Stereo Bars / Pulse)"
+    echo "  - [ESC / Q]  Back / Quit"
     echo ""
 }
 
-# Run main installation
 main

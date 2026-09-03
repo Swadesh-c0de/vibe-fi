@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-#include <filesystem>
+#include <unordered_map>
 
 struct LibraryItem {
     std::string name;
@@ -19,9 +19,11 @@ public:
     std::vector<LibraryItem> list_directory(const std::string& path);
     std::vector<LibraryItem> search(const std::string& query);
     std::string get_home_music_dir();
+    bool is_audio_file(const std::string& filename);
 
 private:
     std::string root_path;
+    std::unordered_map<std::string, std::string> duration_cache;
     bool fuzzy_match(const std::string& pattern, const std::string& text);
 };
 
