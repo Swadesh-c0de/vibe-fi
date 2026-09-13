@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(vibe_fi VERSION 1.1.0 LANGUAGES CXX)
+project(vibe_fi VERSION 1.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -51,6 +51,9 @@ else()
     message(STATUS "MPRIS media controls disabled by configuration")
 endif()
 
+# Version definition for source files
+add_compile_definitions(VIBE_FI_VERSION="${PROJECT_VERSION}")
+
 # Source files organized by domain
 set(SOURCES
     src/main.cpp
@@ -61,6 +64,7 @@ set(SOURCES
     src/services/lyrics.cpp
     src/services/playlist_manager.cpp
     src/services/search.cpp
+    src/services/updater.cpp
     src/integrations/discord_rpc.cpp
     src/integrations/mpris.cpp
     src/utils/utils.cpp

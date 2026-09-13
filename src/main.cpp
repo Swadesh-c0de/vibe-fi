@@ -2,6 +2,7 @@
 #include "ui.hpp"
 #include "utils.hpp"
 #include "search.hpp"
+#include "updater.hpp"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -10,13 +11,19 @@
 
 namespace fs = std::filesystem;
 
+#ifndef VIBE_FI_VERSION
+#define VIBE_FI_VERSION "1.1.1"
+#endif
+
 static void print_help(const char* prog_name) {
-    std::cout << "Vibe-Fi - Terminal Music Player for Developers (v1.1.0)\n\n"
+    std::cout << "Vibe-Fi - Terminal Music Player for Developers (v" << VIBE_FI_VERSION << ")\n\n"
               << "Usage:\n"
               << "  " << prog_name << "                      Launch interactive player\n"
               << "  " << prog_name << " <url>                Stream YouTube audio directly\n"
               << "  " << prog_name << " <file>               Play local audio file\n"
               << "  " << prog_name << " <search query>       Search and play track from YouTube\n"
+              << "  " << prog_name << " --update | -u        Check and apply latest updates\n"
+              << "  " << prog_name << " --no-update          Skip startup update check\n"
               << "  " << prog_name << " --help | -h          Show this help message\n"
               << "  " << prog_name << " --version | -v       Show version information\n\n"
               << "Controls:\n"
@@ -38,28 +45,53 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> startup_errors;
     std::vector<SearchResult> initial_queue;
 
-    // Check for help or version flags
-    if (argc > 1) {
-        std::string arg = argv[1];
+    // Check for help, version, or update flags
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
             print_help(argv[0]);
             return 0;
         }
         if (arg == "--version" || arg == "-v") {
-            std::cout << "Vibe-Fi version 1.1.0 (C++17, libmpv, ncurses)\n";
+            std::cout << "Vibe-Fi version " << VIBE_FI_VERSION << " (C++17, libmpv, ncurses)\n";
             return 0;
         }
+        if (arg == "--update" || arg == "-u") {
+            prompt_and_handle_update(argc, argv, true);
+            return 0;
+        }
+    }
+
+    // Check for --no-update flag and separate playable inputs
+    bool skip_update = false;
+    std::vector<std::string> playback_inputs;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--no-update") {
+            skip_update = true;
+        } else {
+            playback_inputs.push_back(arg);
+        }
+    }
+
+    // Automatic update check on startup
+    if (!skip_update) {
+        prompt_and_handle_update(argc, argv, false);
     }
 
     try {
         Player player;
         bool start_playback = false;
 
-        for (int i = 1; i < argc; ++i) {
-            std::string input = argv[i];
+        for (const auto& input : playback_inputs) {
             std::string url_to_play = input;
 
             if (is_url(input)) {
+                if (!is_online()) {
+                    std::cerr << "⚠️ Internet connection issue: Cannot stream online URL without internet.\n";
+                    startup_errors.push_back("Internet connection issue: Cannot stream URL.");
+                    continue;
+                }
                 std::cout << "Resolving stream URL: " << input << "..." << std::endl;
                 try {
                     url_to_play = get_youtube_stream_url(input);
@@ -72,6 +104,11 @@ int main(int argc, char* argv[]) {
                 url_to_play = fs::absolute(input).string();
             } else {
                 // Treat non-file input as YouTube search query
+                if (!is_online()) {
+                    std::cerr << "⚠️ Internet connection issue: Cannot search YouTube without internet.\n";
+                    startup_errors.push_back("Internet connection issue: Cannot search YouTube.");
+                    continue;
+                }
                 std::cout << "Searching YouTube for: " << input << "..." << std::endl;
                 auto search_hits = search_youtube(input, 5);
                 if (!search_hits.empty()) {
@@ -101,7 +138,7 @@ int main(int argc, char* argv[]) {
 
         UI ui(player);
 
-        if (!start_playback && argc == 1) {
+        if (!start_playback && playback_inputs.empty()) {
             ui.set_mode(AppMode::INTRO);
         } else if (start_playback) {
             ui.set_mode(AppMode::PLAYBACK);

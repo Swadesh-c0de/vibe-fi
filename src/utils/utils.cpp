@@ -5,7 +5,14 @@
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>
+#include <chrono>
+#include <cstring>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <poll.h>
 
 namespace fs = std::filesystem;
 
@@ -60,6 +67,63 @@ std::string find_executable(const std::string& name) {
 bool is_url(const std::string& path) {
     static const std::regex url_regex(R"(^(http|https)://)", std::regex::optimize);
     return std::regex_search(path, url_regex);
+}
+
+bool is_online(int timeout_ms) {
+    static std::chrono::steady_clock::time_point last_check{};
+    static bool cached_status = false;
+
+    auto now = std::chrono::steady_clock::now();
+    if (last_check.time_since_epoch().count() > 0 &&
+        std::chrono::duration_cast<std::chrono::seconds>(now - last_check).count() < 3) {
+        return cached_status;
+    }
+
+    const char* test_ips[] = {"1.1.1.1", "8.8.8.8"};
+    bool connected = false;
+
+    for (const char* ip : test_ips) {
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) continue;
+
+        int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+        struct sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(53);
+        inet_pton(AF_INET, ip, &addr.sin_addr);
+
+        int res = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+        if (res == 0) {
+            close(sock);
+            connected = true;
+            break;
+        }
+
+        if (errno == EINPROGRESS) {
+            struct pollfd pfd;
+            pfd.fd = sock;
+            pfd.events = POLLOUT;
+
+            int poll_res = poll(&pfd, 1, timeout_ms);
+            if (poll_res > 0) {
+                int err = 0;
+                socklen_t len = sizeof(err);
+                if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) == 0 && err == 0) {
+                    connected = true;
+                }
+            }
+        }
+
+        close(sock);
+        if (connected) break;
+    }
+
+    cached_status = connected;
+    last_check = now;
+    return connected;
 }
 
 std::string get_youtube_stream_url(const std::string& url) {

@@ -6,7 +6,7 @@
 
 std::vector<SearchResult> search_youtube(const std::string& query, int limit) {
     std::vector<SearchResult> results;
-    if (query.empty()) return results;
+    if (query.empty() || !is_online()) return results;
 
     std::string ytdl_path = find_executable("yt-dlp");
     std::string search_term = "ytsearch" + std::to_string(limit) + ":" + query;

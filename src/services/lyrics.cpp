@@ -53,6 +53,11 @@ LyricsData LyricsManager::fetch_lyrics(const std::string& artist, const std::str
         }
     }
 
+    // If not cached and offline, do not stall on network requests
+    if (!is_online()) {
+        return {"Internet connection issue: Cannot fetch lyrics offline.", {}, false};
+    }
+
     std::string response;
 
     // 1. Direct query with artist & title if artist is available

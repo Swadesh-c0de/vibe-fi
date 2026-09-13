@@ -23,6 +23,7 @@ std::string find_executable(const std::string& name);
 
 // URL and stream helpers
 bool is_url(const std::string& path);
+bool is_online(int timeout_ms = 800);
 std::string get_youtube_stream_url(const std::string& url);
 std::string get_audio_duration(const std::string& path);
 std::string format_duration(double seconds);

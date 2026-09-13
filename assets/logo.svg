@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 205 44" width="220" height="48" fill="none">
+  <style>
+    .font-mono {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, Menlo, monospace;
+    }
+    .text-cream { fill: #d4be98; }
+    .text-sage { fill: #7daea3; }
+    .bg-icon { fill: #1e1e22; stroke: #32302f; stroke-width: 1.5; }
+
+    @media (prefers-color-scheme: light) {
+      .text-cream { fill: #282828; }
+      .text-sage { fill: #427b58; }
+      .bg-icon { fill: #282828; stroke: #3c3836; }
+    }
+  </style>
+
+  <g transform="translate(4, 4)">
+    <!-- Equalizer Squircle Icon -->
+    <rect x="0" y="0" width="36" height="36" rx="9" class="bg-icon"/>
+    <rect x="6.5" y="14" width="4" height="14" rx="2" fill="#7daea3"/>
+    <rect x="13.5" y="6" width="4" height="22" rx="2" fill="#d4be98"/>
+    <rect x="20.5" y="11" width="4" height="17" rx="2" fill="#e78a4e"/>
+    <rect x="27.5" y="18" width="4" height="10" rx="2" fill="#a9b665"/>
+
+    <!-- Wordmark: vibe-fi -->
+    <text class="font-mono text-cream" x="48" y="28" font-weight="900" font-size="32" letter-spacing="-0.5">vibe<tspan class="text-sage">-fi</tspan></text>
+  </g>
+</svg>

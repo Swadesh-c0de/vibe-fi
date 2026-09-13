@@ -366,7 +366,8 @@ void UI::draw_search_results() {
     getmaxyx(main_win, height, width);
     
     if (search_results.empty()) {
-        std::string msg = "No results found or searching...";
+        std::string msg = is_online() ? "No results found or searching..." 
+                                      : "⚠️ Internet connection issue: Unable to connect to YouTube.";
         mvwprintw(main_win, height / 2, (width - static_cast<int>(msg.length())) / 2, "%s", msg.c_str());
     } else {
         int title_col_width = width - 20;
@@ -548,6 +549,10 @@ void UI::handle_playback_input(int ch) {
             break;
         case 'r': case 'R': 
             if (!last_played_path.empty()) {
+                if (is_url(last_played_path) && !is_online()) {
+                    show_message("⚠️ Internet connection issue. Cannot stream track.");
+                    break;
+                }
                 player.load(last_played_path);
                 player.play();
                 show_message("Replaying...");
@@ -572,6 +577,10 @@ void UI::handle_playback_input(int ch) {
         case 'u': case 'U': {
             std::string url = get_user_input("Paste YouTube URL");
             if (!url.empty()) {
+                if (!is_online()) {
+                    show_message("⚠️ Internet connection issue. Cannot stream online URL.");
+                    break;
+                }
                 show_message("Loading URL...");
                 wnoutrefresh(help_win); 
                 doupdate();
@@ -707,6 +716,10 @@ void UI::handle_search_input_input(int ch) {
         set_mode(AppMode::PLAYBACK);
     } else if (ch == 10) { // Enter
         if (!search_query.empty()) {
+            if (!is_online()) {
+                show_message("⚠️ Internet connection issue. Please check your network.");
+                return;
+            }
             set_mode(AppMode::SEARCH_RESULTS);
             draw();
             show_message("Searching YouTube...");
@@ -716,6 +729,13 @@ void UI::handle_search_input_input(int ch) {
             search_results = search_youtube(search_query);
             selection_index = 0;
             scroll_offset = 0;
+            if (search_results.empty()) {
+                if (!is_online()) {
+                    show_message("⚠️ Internet connection issue: Unable to reach YouTube.");
+                } else {
+                    show_message("No results found for: " + search_query);
+                }
+            }
             draw();
         }
     } else if (ch == KEY_BACKSPACE || ch == 127 || ch == '\b') {
@@ -777,6 +797,10 @@ void UI::handle_search_results_input(int ch) {
             break;
         case 10: // Enter
             if (!search_results.empty() && selection_index < static_cast<int>(search_results.size())) {
+                if (!is_online()) {
+                    show_message("⚠️ Internet connection issue. Cannot stream track.");
+                    break;
+                }
                 show_message("Streaming track...");
                 wnoutrefresh(help_win);
                 doupdate(); 
@@ -1094,6 +1118,10 @@ void UI::handle_playlist_view_input(int ch) {
         case 10: // Enter
             if (!current_playlist_songs.empty() && selection_index < static_cast<int>(current_playlist_songs.size())) {
                 auto song = current_playlist_songs[selection_index];
+                if (is_url(song.url) && !is_online()) {
+                    show_message("⚠️ Internet connection issue. Cannot play online track.");
+                    break;
+                }
                 try {
                     player.stop();
                     fetch_current_lyrics(song.title, song.url);
@@ -1254,7 +1282,10 @@ void UI::draw_intro() {
     }
     wattroff(main_win, COLOR_PAIR(1) | A_BOLD);
     
-    std::string welcome = "Vibe-Fi Terminal Music Player (v1.1.0)";
+#ifndef VIBE_FI_VERSION
+#define VIBE_FI_VERSION "1.1.1"
+#endif
+    std::string welcome = std::string("Vibe-Fi Terminal Music Player (v") + VIBE_FI_VERSION + ")";
     int welcome_x = (width - static_cast<int>(welcome.length())) / 2;
     if (welcome_x < 2) welcome_x = 2;
     mvwprintw(main_win, start_y + static_cast<int>(ascii_art.size()) + 2, welcome_x, "%s", welcome.c_str());
@@ -1470,6 +1501,10 @@ void UI::handle_queue_input(int ch) {
             if (!play_queue.empty() && selection_index < static_cast<int>(play_queue.size())) {
                 queue_index = selection_index;
                 const auto& song = play_queue[queue_index];
+                if (is_url(song.url) && !is_online()) {
+                    show_message("⚠️ Internet connection issue. Cannot play online track.");
+                    break;
+                }
                 
                 try {
                     player.stop();
@@ -1508,6 +1543,10 @@ void UI::play_next() {
     if (next_index < static_cast<int>(play_queue.size())) {
         queue_index = next_index;
         const auto& song = play_queue[queue_index];
+        if (is_url(song.url) && !is_online()) {
+            show_message("⚠️ Internet connection issue: Skipping " + song.title);
+            return;
+        }
         
         try {
             show_message("Playing: " + song.title);
@@ -1534,6 +1573,10 @@ void UI::play_previous() {
     if (queue_index > 0 && queue_index <= static_cast<int>(play_queue.size())) {
         queue_index--;
         const auto& song = play_queue[queue_index];
+        if (is_url(song.url) && !is_online()) {
+            show_message("⚠️ Internet connection issue: Cannot play " + song.title);
+            return;
+        }
         
         try {
             show_message("Playing previous: " + song.title);
@@ -1754,6 +1797,10 @@ void UI::load_state() {
     }
     
     if (!path.empty()) {
+        if (is_url(path) && !is_online()) {
+            show_message("⚠️ Internet connection issue. Cannot resume online track.");
+            return;
+        }
         show_message("Resuming session...");
         doupdate();
 
