@@ -23,7 +23,7 @@ std::string find_executable(const std::string& name);
 
 // URL and stream helpers
 bool is_url(const std::string& path);
-bool is_online(int timeout_ms = 800);
+bool is_online(int timeout_ms = 1500);
 std::string get_youtube_stream_url(const std::string& url);
 std::string get_audio_duration(const std::string& path);
 std::string format_duration(double seconds);
@@ -36,5 +36,6 @@ std::string get_vibe_dir();
 double safe_stod(const std::string& s, double default_val = 0.0);
 float safe_stof(const std::string& s, float default_val = 0.0f);
 int safe_stoi(const std::string& s, int default_val = 0);
+int64_t safe_stoll(const std::string& s, int64_t default_val = 0);
 
 #endif // UTILS_HPP

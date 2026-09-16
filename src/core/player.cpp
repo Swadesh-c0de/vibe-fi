@@ -13,11 +13,19 @@ Player::Player() : mpv(nullptr) {
         throw std::runtime_error("Failed to create libmpv context");
     }
 
-    // Configure mpv defaults for optimal audio streaming
+    // Configure mpv defaults for optimal, resilient audio streaming
     check_error(mpv_set_option_string(mpv, "vo", "null"));                   // Audio only, disable video window
     check_error(mpv_set_option_string(mpv, "ytdl", "yes"));                  // Enable YouTube extraction
-    check_error(mpv_set_option_string(mpv, "ytdl-format", "bestaudio/best"));// Prefer highest quality audio
+    check_error(mpv_set_option_string(mpv, "ytdl-format", "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"));
     check_error(mpv_set_option_string(mpv, "audio-display", "no"));          // Don't render embedded album art as video
+
+    // Network resilience: auto-reconnect streamed audio on network hiccups, buffer up to 32MB ahead
+    mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
+    mpv_set_option_string(mpv, "network-timeout", "30");
+    mpv_set_option_string(mpv, "demuxer-max-bytes", "32MiB");
+    mpv_set_option_string(mpv, "demuxer-readahead-secs", "60");
+    mpv_set_option_string(mpv, "ytdl-raw-options", "no-check-certificates=,retries=3,socket-timeout=15");
+    mpv_set_option_string(mpv, "user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
 
     // Dynamically locate yt-dlp across PATH and common install directories
     std::string ytdl_path = find_executable("yt-dlp");

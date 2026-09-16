@@ -88,8 +88,8 @@ int main(int argc, char* argv[]) {
 
             if (is_url(input)) {
                 if (!is_online()) {
-                    std::cerr << "⚠️ Internet connection issue: Cannot stream online URL without internet.\n";
-                    startup_errors.push_back("Internet connection issue: Cannot stream URL.");
+                    std::cerr << ":: Error: Internet connection required to stream online URL.\n";
+                    startup_errors.push_back("Internet connection required to stream URL.");
                     continue;
                 }
                 std::cout << "Resolving stream URL: " << input << "..." << std::endl;
@@ -105,8 +105,8 @@ int main(int argc, char* argv[]) {
             } else {
                 // Treat non-file input as YouTube search query
                 if (!is_online()) {
-                    std::cerr << "⚠️ Internet connection issue: Cannot search YouTube without internet.\n";
-                    startup_errors.push_back("Internet connection issue: Cannot search YouTube.");
+                    std::cerr << ":: Error: Internet connection required to search YouTube.\n";
+                    startup_errors.push_back("Internet connection required to search YouTube.");
                     continue;
                 }
                 std::cout << "Searching YouTube for: " << input << "..." << std::endl;

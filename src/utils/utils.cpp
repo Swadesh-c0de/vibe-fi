@@ -79,10 +79,18 @@ bool is_online(int timeout_ms) {
         return cached_status;
     }
 
-    const char* test_ips[] = {"1.1.1.1", "8.8.8.8"};
+    struct Endpoint {
+        const char* ip;
+        int port;
+    };
+    const Endpoint endpoints[] = {
+        {"1.1.1.1", 443}, // Cloudflare HTTPS (universally open)
+        {"8.8.8.8", 53},  // Google DNS
+        {"1.1.1.1", 53}   // Cloudflare DNS
+    };
     bool connected = false;
 
-    for (const char* ip : test_ips) {
+    for (const auto& ep : endpoints) {
         int sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) continue;
 
@@ -92,8 +100,8 @@ bool is_online(int timeout_ms) {
         struct sockaddr_in addr;
         std::memset(&addr, 0, sizeof(addr));
         addr.sin_family = AF_INET;
-        addr.sin_port = htons(53);
-        inet_pton(AF_INET, ip, &addr.sin_addr);
+        addr.sin_port = htons(ep.port);
+        inet_pton(AF_INET, ep.ip, &addr.sin_addr);
 
         int res = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
         if (res == 0) {
@@ -242,6 +250,15 @@ int safe_stoi(const std::string& s, int default_val) {
     if (s.empty()) return default_val;
     try {
         return std::stoi(s);
+    } catch (...) {
+        return default_val;
+    }
+}
+
+int64_t safe_stoll(const std::string& s, int64_t default_val) {
+    if (s.empty()) return default_val;
+    try {
+        return std::stoll(s);
     } catch (...) {
         return default_val;
     }
