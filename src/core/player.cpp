@@ -54,6 +54,8 @@ void Player::check_error(int status) {
 }
 
 void Player::load(const std::string& path, const std::string& mode) {
+    clear_playback_flags();
+    loading_active = true;
     const char* cmd[] = {"loadfile", path.c_str(), mode.c_str(), nullptr};
     check_error(mpv_command(mpv, cmd));
 }
@@ -77,6 +79,7 @@ void Player::toggle_pause() {
 }
 
 void Player::stop() {
+    clear_playback_flags();
     const char* cmd[] = {"stop", nullptr};
     check_error(mpv_command(mpv, cmd));
 }
@@ -186,4 +189,62 @@ AudioLevelStats Player::get_audio_stats() {
         mpv_free_node_contents(&node);
     }
     return stats;
+}
+
+void Player::poll_events() {
+    if (!mpv) return;
+    while (true) {
+        mpv_event* event = mpv_wait_event(mpv, 0);
+        if (event->event_id == MPV_EVENT_NONE) break;
+
+        switch (event->event_id) {
+            case MPV_EVENT_START_FILE:
+                loading_active = true;
+                track_finished = false;
+                playback_error = false;
+                last_error_str.clear();
+                break;
+            case MPV_EVENT_FILE_LOADED:
+                loading_active = false;
+                break;
+            case MPV_EVENT_END_FILE: {
+                loading_active = false;
+                mpv_event_end_file* eef = static_cast<mpv_event_end_file*>(event->data);
+                if (eef) {
+                    if (eef->reason == MPV_END_FILE_REASON_EOF) {
+                        track_finished = true;
+                    } else if (eef->reason == MPV_END_FILE_REASON_ERROR) {
+                        playback_error = true;
+                        last_error_str = mpv_error_string(eef->error);
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
+
+bool Player::consume_track_finished() {
+    if (track_finished) {
+        track_finished = false;
+        return true;
+    }
+    return false;
+}
+
+bool Player::consume_playback_error() {
+    if (playback_error) {
+        playback_error = false;
+        return true;
+    }
+    return false;
+}
+
+void Player::clear_playback_flags() {
+    track_finished = false;
+    playback_error = false;
+    loading_active = false;
+    last_error_str.clear();
 }

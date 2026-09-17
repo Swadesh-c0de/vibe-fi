@@ -33,6 +33,7 @@ UI::UI(Player& p)
       playing_index(-1),
       is_playing_from_playlist(false),
       queue_index(-1),
+      track_retry_count(0),
       song_to_move_index(-1),
       last_key(0) 
 {
@@ -187,9 +188,31 @@ void UI::run() {
         draw();
         handle_input();
         
-        // Autoplay check: transition to next track when player becomes idle
-        if (autoplay_enabled && player.is_idle() && !play_queue.empty() && queue_index >= 0) {
-            play_next();
+        // Poll mpv events (EOF, ERROR, FILE_LOADED, etc.)
+        player.poll_events();
+
+        // Autoplay check: transition to next track ONLY when track naturally finishes (EOF)
+        if (player.consume_track_finished()) {
+            track_retry_count = 0;
+            if (autoplay_enabled && !play_queue.empty() && queue_index >= 0) {
+                play_next();
+            }
+        } else if (player.consume_playback_error()) {
+            // Playback or buffering error occurred
+            if (queue_index >= 0 && queue_index < static_cast<int>(play_queue.size())) {
+                const auto& song = play_queue[queue_index];
+                if (track_retry_count < 2) {
+                    track_retry_count++;
+                    show_message("Streaming error, retrying... (" + std::to_string(track_retry_count) + "/2)");
+                    start_track_playback(song.title, song.url);
+                } else {
+                    track_retry_count = 0;
+                    show_message("Failed to stream: " + song.title + " (press R to retry, N for next)");
+                }
+            } else {
+                track_retry_count = 0;
+                show_message("Playback error: " + player.get_last_error());
+            }
         }
 
         // Auto-fetch lyrics as soon as media title metadata is resolved by player
@@ -1541,24 +1564,15 @@ void UI::play_next() {
     if (play_queue.empty()) return;
     int next_index = queue_index + 1;
     if (next_index < static_cast<int>(play_queue.size())) {
-        queue_index = next_index;
-        const auto& song = play_queue[queue_index];
+        const auto& song = play_queue[next_index];
         if (is_url(song.url) && !is_online()) {
-            show_message("⚠️ Internet connection issue: Skipping " + song.title);
+            show_message("Network unavailable: Paused at " + song.title);
             return;
         }
-        
-        try {
-            show_message("Playing: " + song.title);
-            player.stop();
-            fetch_current_lyrics(song.title, song.url);
-            player.load(song.url);
-            last_played_path = song.url;
-            player.set_property("force-media-title", song.title);
-            player.play();
-        } catch (const std::exception& e) {
-            show_message(std::string("Autoplay error: ") + e.what());
-        }
+        queue_index = next_index;
+        track_retry_count = 0;
+        show_message("Playing: " + song.title);
+        start_track_playback(song.title, song.url);
     } else {
         queue_index = -1;
         show_message("Reached end of queue.");
@@ -1571,24 +1585,16 @@ void UI::play_previous() {
         return;
     }
     if (queue_index > 0 && queue_index <= static_cast<int>(play_queue.size())) {
-        queue_index--;
-        const auto& song = play_queue[queue_index];
+        int prev_index = queue_index - 1;
+        const auto& song = play_queue[prev_index];
         if (is_url(song.url) && !is_online()) {
-            show_message("⚠️ Internet connection issue: Cannot play " + song.title);
+            show_message("Network unavailable: Cannot play " + song.title);
             return;
         }
-        
-        try {
-            show_message("Playing previous: " + song.title);
-            player.stop();
-            fetch_current_lyrics(song.title, song.url);
-            player.load(song.url);
-            last_played_path = song.url;
-            player.set_property("force-media-title", song.title);
-            player.play();
-        } catch (const std::exception& e) {
-            show_message(std::string("Playback error: ") + e.what());
-        }
+        queue_index = prev_index;
+        track_retry_count = 0;
+        show_message("Playing previous: " + song.title);
+        start_track_playback(song.title, song.url);
     } else {
         player.seek(0);
     }
@@ -1696,6 +1702,18 @@ void UI::fetch_current_lyrics(std::string title_override, std::string url_overri
     current_lyrics_data = lyrics_manager.fetch_lyrics(artist, song_title);
     lyrics_scroll_offset = 0;
     lyrics_auto_scroll = true;
+}
+
+void UI::start_track_playback(const std::string& title, const std::string& url) {
+    try {
+        last_played_path = url;
+        player.load(url);
+        player.set_property("force-media-title", title);
+        player.play();
+        fetch_current_lyrics(title, url);
+    } catch (const std::exception& e) {
+        show_message(std::string("Playback error: ") + e.what());
+    }
 }
 
 void UI::load_themes() {

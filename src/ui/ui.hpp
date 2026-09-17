@@ -107,6 +107,10 @@ private:
     
     std::vector<PlaylistSong> play_queue;
     int queue_index;
+    int track_retry_count;
+
+    // Track playback helper
+    void start_track_playback(const std::string& title, const std::string& url);
 
     // Drawing methods
     void draw();

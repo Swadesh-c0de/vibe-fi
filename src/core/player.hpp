@@ -40,9 +40,24 @@ public:
     void set_property(const std::string& name, const std::string& value);
     AudioLevelStats get_audio_stats();
 
+    // mpv event polling & lifecycle status
+    void poll_events();
+    bool has_track_finished() const { return track_finished; }
+    bool consume_track_finished();
+    bool has_playback_error() const { return playback_error; }
+    bool consume_playback_error();
+    std::string get_last_error() const { return last_error_str; }
+    bool is_loading() const { return loading_active; }
+    void clear_playback_flags();
+
 private:
     mpv_handle* mpv;
     void check_error(int status);
+
+    bool track_finished = false;
+    bool playback_error = false;
+    bool loading_active = false;
+    std::string last_error_str;
 };
 
 #endif // PLAYER_HPP
