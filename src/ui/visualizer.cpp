@@ -8,6 +8,11 @@ Visualizer::Visualizer() {
 }
 
 void Visualizer::reset() {
+    cava_bars.clear();
+    cava_peaks.clear();
+    cava_hold.clear();
+    cava_fall.clear();
+
     flame_bars.clear();
     flame_peaks.clear();
     flame_hold.clear();
@@ -17,11 +22,6 @@ void Visualizer::reset() {
     stereo_peaks.clear();
     stereo_hold.clear();
     stereo_fall.clear();
-
-    pulse_bars.clear();
-    pulse_peaks.clear();
-    pulse_hold.clear();
-    pulse_fall.clear();
 }
 
 void Visualizer::update_track_visual_profile(Player& player) {
@@ -103,11 +103,11 @@ void Visualizer::render(WINDOW* win, Player& player, VisualizerMode mode) {
     double pos = player.get_position();
     float track_bps = current_profile.bpm / 60.0f;
 
-    std::string mode_title = "VISUALIZER: NEON FLAME";
-    if (mode == VisualizerMode::STEREO_BARS) {
+    std::string mode_title = "VISUALIZER: CAVA WAVE";
+    if (mode == VisualizerMode::NEON_FLAME) {
+        mode_title = "VISUALIZER: NEON FLAME";
+    } else if (mode == VisualizerMode::STEREO_BARS) {
         mode_title = "VISUALIZER: STEREO BARS";
-    } else if (mode == VisualizerMode::PULSE) {
-        mode_title = "VISUALIZER: PULSE";
     }
 
     if (is_active) {
@@ -149,14 +149,14 @@ void Visualizer::render(WINDOW* win, Player& player, VisualizerMode mode) {
     float vol = std::clamp(player.get_volume() / 100.0f, 0.2f, 1.2f);
 
     switch (mode) {
+        case VisualizerMode::CAVA_WAVE:
+            render_cava_wave(win, player, draw_h, draw_w, pos, vol, stats);
+            break;
         case VisualizerMode::NEON_FLAME:
             render_neon_flame(win, player, draw_h, draw_w, pos, vol, stats);
             break;
         case VisualizerMode::STEREO_BARS:
             render_stereo_bars(win, player, draw_h, draw_w, pos, vol, stats);
-            break;
-        case VisualizerMode::PULSE:
-            render_pulse(win, player, draw_h, draw_w, pos, vol, stats);
             break;
     }
 
@@ -449,92 +449,142 @@ void Visualizer::render_stereo_bars(WINDOW* win, Player& player, int draw_h, int
     }
 }
 
-void Visualizer::render_pulse(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats) {
+void Visualizer::render_cava_wave(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats) {
     bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle();
     float max_sub_levels = draw_h * 8.0f;
 
-    float live_rms = stats.valid ? stats.rms_overall : 0.35f;
-    float live_peak = stats.valid ? stats.peak_overall : 0.45f;
-    float attack_speed = 0.90f;
-    float decay_speed  = 0.26f;
-
-    float track_bps = current_profile.bpm / 60.0f;
-    float beat_interval = 1.0f / std::max(0.1f, track_bps);
-
-    int bar_w = (draw_w >= 80) ? 2 : 1;
+    // CAVA layout geometry: 2 columns wide per bar (or 1 on small terminals), 1-space gap
+    int bar_w = (draw_w >= 60) ? 2 : 1;
     int gap = 1;
     int slot_w = bar_w + gap;
     int num_bars = draw_w / slot_w;
-    if (num_bars < 4) num_bars = 4;
+    if (num_bars < 6) num_bars = 6;
     int total_bars_w = num_bars * slot_w - gap;
     int start_x = 1 + std::max(0, (draw_w - total_bars_w) / 2);
 
-    if (static_cast<int>(pulse_bars.size()) != num_bars) {
-        pulse_bars.assign(num_bars, 0.0f);
-        pulse_peaks.assign(num_bars, 0.0f);
-        pulse_hold.assign(num_bars, 0);
-        pulse_fall.assign(num_bars, 0.0f);
+    if (static_cast<int>(cava_bars.size()) != num_bars) {
+        cava_bars.assign(num_bars, 0.0f);
+        cava_peaks.assign(num_bars, 0.0f);
+        cava_hold.assign(num_bars, 0);
+        cava_fall.assign(num_bars, 0.0f);
     }
 
-    int center = num_bars / 2;
+    float live_rms = stats.valid ? stats.rms_overall : 0.35f;
+    float live_peak = stats.valid ? stats.peak_overall : 0.45f;
+    float live_left = stats.valid ? stats.rms_left : live_rms;
+    float live_right = stats.valid ? stats.rms_right : live_rms;
+    float live_pitch = stats.valid ? std::clamp(stats.zero_crossings * 12.0f, 0.20f, 1.60f) : 1.0f;
+
     if (is_active) {
+        float track_bps = current_profile.bpm / 60.0f;
+        float beat_interval = 1.0f / std::max(0.1f, track_bps);
+
+        // Acoustic beat components matching other visualizer modes
         float kick_phase = fmod(pos, beat_interval) / beat_interval;
-        float kick = exp(-kick_phase * 6.0f) * current_profile.bass_weight * (0.35f + live_peak * 0.75f);
+        float kick = exp(-kick_phase * (5.2f + current_profile.rhythm_swing * 3.5f)) * current_profile.bass_weight;
 
+        float snare_phase = fmod(pos + beat_interval * 0.5f, beat_interval) / beat_interval;
+        float snare = exp(-snare_phase * 7.5f) * current_profile.mid_weight;
+
+        float hihat_phase = fmod(pos, beat_interval * 0.25f) / (beat_interval * 0.25f);
+        float hihat = exp(-hihat_phase * 11.0f) * current_profile.treble_weight;
+
+        // Step 1: Calculate balanced frequency targets across bars (Bass -> Mids -> Treble)
+        std::vector<float> targets(num_bars, 0.0f);
         for (int i = 0; i < num_bars; ++i) {
-            float dist_from_center = fabsf(static_cast<float>(i - center)) / std::max(1, center);
-            float ripple = sin(pos * (track_bps * 4.5f) - dist_from_center * 8.0f) * 0.5f + 0.5f;
-            float falloff = 1.0f - dist_from_center * 0.65f;
+            float t = (num_bars > 1) ? static_cast<float>(i) / (num_bars - 1) : 0.5f;
 
-            float energy = (kick * 0.85f * (1.0f - dist_from_center * 0.8f) + ripple * 0.45f * falloff)
-                           * vol * (0.3f + live_rms * 0.85f);
-            if (energy < 0.02f) energy = 0.02f;
-            if (energy > 1.0f) energy = 1.0f;
+            // Logarithmic-styled frequency dispersion
+            float bass_band = pow(1.0f - t, 1.5f) * (kick * 0.42f + live_rms * 0.30f);
+            float mid_band = exp(-pow((t - 0.45f) / 0.28f, 2.0f)) * (snare * 0.35f + live_rms * 0.25f);
+            float treble_band = pow(t, 1.3f) * (hihat * 0.28f + live_pitch * 0.20f);
 
-            float target = energy * max_sub_levels;
-            if (target > pulse_bars[i]) {
-                pulse_bars[i] += (target - pulse_bars[i]) * attack_speed;
-            } else {
-                pulse_bars[i] -= (pulse_bars[i] - target) * decay_speed;
+            // Channel stereo balance across spectrum
+            float ch_blend = (t < 0.5f) ? (live_left * (1.0f - t * 0.5f) + live_right * (t * 0.5f))
+                                        : (live_left * ((1.0f - t) * 0.5f) + live_right * (0.5f + t * 0.5f));
+
+            // Gentle harmonic acoustic undulation
+            float acoustic_wave = (sin(pos * (track_bps * 3.2f * live_pitch) + i * 0.32f) * 0.08f +
+                                   cos(pos * (track_bps * 5.5f * live_pitch) - i * 0.24f) * 0.06f);
+
+            float raw_energy = (bass_band * 0.75f + mid_band * 0.60f + treble_band * 0.50f +
+                                ch_blend * 0.25f + acoustic_wave) * vol * current_profile.energy_variance;
+
+            // Normalize and scale with live peak to match sensitivity of other visualizers
+            if (stats.valid) {
+                raw_energy *= (0.28f + live_peak * 0.72f);
             }
 
-            if (pulse_bars[i] >= pulse_peaks[i]) {
-                pulse_peaks[i] = pulse_bars[i];
-                pulse_hold[i] = 4;
-                pulse_fall[i] = 0.0f;
+            raw_energy = std::clamp(raw_energy, 0.02f, 0.95f);
+            targets[i] = raw_energy * max_sub_levels;
+        }
+
+        // Step 2: CAVA Monstercat Smoothing Filter (Bidirectional energy distribution)
+        // Balanced falloff (0.68f) for fluid wave contour without oversaturating neighbors
+        std::vector<float> smoothed = targets;
+        for (int i = 1; i < num_bars; ++i) {
+            smoothed[i] = std::max(smoothed[i], smoothed[i - 1] * 0.68f);
+        }
+        for (int i = num_bars - 2; i >= 0; --i) {
+            smoothed[i] = std::max(smoothed[i], smoothed[i + 1] * 0.68f);
+        }
+
+        // Step 3: Balanced Asymmetric Ballistics matching Stereo Bars & Neon Flame
+        float attack_speed = stats.valid ? (0.24f + live_peak * 0.48f) : 0.55f;
+        float decay_speed  = stats.valid ? (0.08f + live_rms * 0.12f) : 0.16f;
+
+        for (int i = 0; i < num_bars; ++i) {
+            float target = smoothed[i];
+            if (target > cava_bars[i]) {
+                cava_bars[i] += (target - cava_bars[i]) * attack_speed;
             } else {
-                if (pulse_hold[i] > 0) {
-                    pulse_hold[i]--;
+                cava_bars[i] -= (cava_bars[i] - target) * decay_speed;
+            }
+
+            if (cava_bars[i] >= cava_peaks[i]) {
+                cava_peaks[i] = cava_bars[i];
+                cava_hold[i] = (stats.valid && live_peak < 0.35f) ? 2 : 4;
+                cava_fall[i] = 0.0f;
+            } else {
+                if (cava_hold[i] > 0) {
+                    cava_hold[i]--;
                 } else {
-                    pulse_fall[i] += 0.5f;
-                    pulse_peaks[i] -= pulse_fall[i];
-                    if (pulse_peaks[i] < pulse_bars[i]) pulse_peaks[i] = pulse_bars[i];
+                    cava_fall[i] += (stats.valid && live_peak < 0.35f) ? 0.35f : 0.50f;
+                    cava_peaks[i] -= cava_fall[i];
+                    if (cava_peaks[i] < cava_bars[i]) cava_peaks[i] = cava_bars[i];
                 }
             }
         }
     } else {
+        // Smooth fadeout when paused or stopped
         for (int i = 0; i < num_bars; ++i) {
-            pulse_bars[i] *= 0.85f;
-            pulse_peaks[i] *= 0.85f;
-            if (pulse_bars[i] < 0.5f) pulse_bars[i] = 0.0f;
-            if (pulse_peaks[i] < 0.5f) pulse_peaks[i] = 0.0f;
+            cava_bars[i] *= 0.85f;
+            cava_peaks[i] *= 0.85f;
+            if (cava_bars[i] < 0.5f) cava_bars[i] = 0.0f;
+            if (cava_peaks[i] < 0.5f) cava_peaks[i] = 0.0f;
         }
     }
 
+    // Step 4: Multi-tier dynamic theme gradient rendering
     int height = draw_h + 2;
     for (int i = 0; i < num_bars; ++i) {
-        int val = static_cast<int>(pulse_bars[i]);
+        int val = static_cast<int>(cava_bars[i]);
         int full_cells = val / 8;
         int rem = val % 8;
-        int peak_cell = static_cast<int>(pulse_peaks[i]) / 8;
+        int peak_cell = static_cast<int>(cava_peaks[i]) / 8;
         int bar_x = start_x + i * slot_w;
 
         for (int y = 0; y < draw_h; ++y) {
             int draw_y = height - 2 - y;
+
+            // Dynamic theme-aware vertical gradient stops:
+            // - Bottom 40%: Theme Base/Low (Pair 7)
+            // - Middle 35%: Theme Mid (Pair 8)
+            // - Top 25%: Theme High/Alert (Pair 9)
             int color_pair = 7;
-            if (y >= draw_h * 2 / 3) {
+            if (y >= draw_h * 3 / 4) {
                 color_pair = 9;
-            } else if (y >= draw_h / 3) {
+            } else if (y >= draw_h * 2 / 5) {
                 color_pair = 8;
             }
 
@@ -551,6 +601,7 @@ void Visualizer::render_pulse(WINDOW* win, Player& player, int draw_h, int draw_
                 }
                 wattroff(win, COLOR_PAIR(color_pair) | A_BOLD);
             } else if (y == peak_cell && peak_cell > full_cells && peak_cell < draw_h) {
+                // Peak Cap: White / Accent (Pair 10)
                 wattron(win, COLOR_PAIR(10) | A_BOLD);
                 for (int k = 0; k < bar_w; ++k) {
                     mvwaddstr(win, draw_y, bar_x + k, PEAK_CHAR);
@@ -559,4 +610,9 @@ void Visualizer::render_pulse(WINDOW* win, Player& player, int draw_h, int draw_
             }
         }
     }
+
+    // Baseline accent rule
+    wattron(win, COLOR_PAIR(7) | A_DIM);
+    mvwhline(win, height - 2, 1, ACS_HLINE, draw_w);
+    wattroff(win, COLOR_PAIR(7) | A_DIM);
 }

@@ -25,7 +25,7 @@ UI::UI(Player& p)
       lyrics_win(nullptr),
       selection_index(0), 
       scroll_offset(0), 
-      current_visualizer_mode(VisualizerMode::NEON_FLAME), 
+      current_visualizer_mode(VisualizerMode::CAVA_WAVE), 
       current_theme_idx(0),
       lyrics_scroll_offset(0), 
       lyrics_auto_scroll(true),
@@ -1750,12 +1750,12 @@ void UI::cycle_theme() {
 
 void UI::cycle_visualizer() {
     int vmode = static_cast<int>(current_visualizer_mode);
-    vmode = (vmode + 1) % 3; // Cycle: Neon Flame (Option 1) -> Stereo Bars (Option 2) -> Radial Pulse (Option 3)
+    vmode = (vmode + 1) % 3; // Cycle: Cava Wave -> Neon Flame -> Stereo Bars
     current_visualizer_mode = static_cast<VisualizerMode>(vmode);
     
-    std::string name = "Neon Flame";
-    if (current_visualizer_mode == VisualizerMode::STEREO_BARS) name = "Stereo Bars";
-    else if (current_visualizer_mode == VisualizerMode::PULSE) name = "Radial Pulse";
+    std::string name = "Cava Wave";
+    if (current_visualizer_mode == VisualizerMode::NEON_FLAME) name = "Neon Flame";
+    else if (current_visualizer_mode == VisualizerMode::STEREO_BARS) name = "Stereo Bars";
     
     show_message("Visualizer: " + name);
 }

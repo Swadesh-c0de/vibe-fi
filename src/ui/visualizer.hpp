@@ -7,9 +7,9 @@
 #include "player.hpp"
 
 enum class VisualizerMode {
-    NEON_FLAME,   // Option 1: Neon Flame (Dual-mirrored dynamic center volcano with dancing frequency columns & metronome)
-    STEREO_BARS,  // Option 2: Stereo Bars (8x sub-block graphic equalizer spectrum)
-    PULSE         // Option 3: Radial Pulse (Subwoofer center burst)
+    CAVA_WAVE,    // Option 1: Cava Wave (Monstercat fluid smoothed spectrum with dynamic theme gradients) - DEFAULT
+    NEON_FLAME,   // Option 2: Neon Flame (Dual-mirrored dynamic center volcano with dancing frequency columns & metronome)
+    STEREO_BARS   // Option 3: Stereo Bars (8x sub-block graphic equalizer spectrum)
 };
 
 struct TrackVisualProfile {
@@ -39,6 +39,12 @@ public:
 private:
     TrackVisualProfile current_profile;
 
+    // Internal state for CAVA_WAVE mode
+    std::vector<float> cava_bars;
+    std::vector<float> cava_peaks;
+    std::vector<int> cava_hold;
+    std::vector<float> cava_fall;
+
     // Internal state for NEON_FLAME mode
     std::vector<float> flame_bars;
     std::vector<float> flame_peaks;
@@ -51,16 +57,10 @@ private:
     std::vector<int> stereo_hold;
     std::vector<float> stereo_fall;
 
-    // Internal state for PULSE mode
-    std::vector<float> pulse_bars;
-    std::vector<float> pulse_peaks;
-    std::vector<int> pulse_hold;
-    std::vector<float> pulse_fall;
-
     void update_track_visual_profile(Player& player);
+    void render_cava_wave(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats);
     void render_neon_flame(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats);
     void render_stereo_bars(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats);
-    void render_pulse(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats);
 };
 
 #endif // VISUALIZER_HPP
