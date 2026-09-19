@@ -39,6 +39,14 @@ enum class AppMode {
     INTRO
 };
 
+enum class PlaybackSource {
+    NONE,
+    PLAYLIST,
+    SEARCH,
+    LIBRARY,
+    QUEUE
+};
+
 class UI {
 public:
     UI(Player& player);
@@ -104,6 +112,7 @@ private:
     bool autoplay_enabled;
     int playing_index;
     bool is_playing_from_playlist;
+    PlaybackSource current_playback_source;
     
     std::vector<PlaylistSong> play_queue;
     int queue_index;
@@ -167,6 +176,7 @@ private:
     
     int last_key;
     std::string get_user_input(const std::string& prompt);
+    bool confirm_quit();
 };
 
 #endif // UI_HPP

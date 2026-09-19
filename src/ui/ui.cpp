@@ -32,6 +32,7 @@ UI::UI(Player& p)
       autoplay_enabled(true),
       playing_index(-1),
       is_playing_from_playlist(false),
+      current_playback_source(PlaybackSource::NONE),
       queue_index(-1),
       track_retry_count(0),
       song_to_move_index(-1),
@@ -106,10 +107,14 @@ void UI::set_mode(AppMode new_mode) {
 
 void UI::set_initial_queue(const std::vector<SearchResult>& results) {
     play_queue.clear();
+    search_results = results;
     for (const auto& res : results) {
         play_queue.push_back({res.title, res.url, res.duration});
     }
     queue_index = 0;
+    is_playing_from_playlist = false;
+    playing_playlist_name.clear();
+    current_playback_source = PlaybackSource::SEARCH;
     if (!play_queue.empty()) {
         last_played_path = play_queue[0].url;
         player.set_property("force-media-title", play_queue[0].title);
@@ -487,7 +492,7 @@ void UI::update_help() {
         wattron(help_win, COLOR_PAIR(4));
         if (mode == AppMode::PLAYBACK) {
             std::string auto_str = autoplay_enabled ? "ON" : "OFF";
-            mvwprintw(help_win, 1, 2, "[SPACE] Pause [Q] Queue [L] Library [S] Search [P] Playlist [R] Replay [O] Autoplay:%s [ESC] Quit", auto_str.c_str());
+            mvwprintw(help_win, 1, 2, "[SPACE] Pause [N/B] Next/Prev [Q] Queue [L] Library [S] Search [P] Playlist [R] Replay [O] Autoplay:%s [ESC] Quit", auto_str.c_str());
         } else if (mode == AppMode::LIBRARY_BROWSER) {
             mvwprintw(help_win, 1, 2, "[ENTER] Select/Play [BKSP] Parent Directory [ESC] Playback");
         } else if (mode == AppMode::SEARCH_INPUT) {
@@ -544,7 +549,9 @@ void UI::handle_input() {
 void UI::handle_playback_input(int ch) {
     switch (ch) {
         case 27: 
-            running = false; 
+            if (confirm_quit()) {
+                running = false; 
+            }
             break;
         case ' ': 
             player.toggle_pause(); 
@@ -557,14 +564,31 @@ void UI::handle_playback_input(int ch) {
             set_mode(AppMode::SEARCH_INPUT); 
             break;
         case 'q': case 'Q':
-            if (!playing_playlist_name.empty()) {
+            if (current_playback_source == PlaybackSource::SEARCH && !search_results.empty()) {
+                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(search_results.size())) ? queue_index : 0;
+                scroll_offset = std::max(0, selection_index - 5);
+                set_mode(AppMode::SEARCH_RESULTS);
+            } else if (current_playback_source == PlaybackSource::PLAYLIST && !playing_playlist_name.empty()) {
                 current_playlist_name = playing_playlist_name;
                 current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
-                selection_index = 0;
+                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(current_playlist_songs.size())) ? queue_index : 0;
+                scroll_offset = std::max(0, selection_index - 5);
                 set_mode(AppMode::PLAYLIST_VIEW);
+            } else if (current_playback_source == PlaybackSource::LIBRARY && !library_items.empty()) {
+                set_mode(AppMode::LIBRARY_BROWSER);
             } else if (!search_results.empty()) {
+                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(search_results.size())) ? queue_index : 0;
+                scroll_offset = std::max(0, selection_index - 5);
                 set_mode(AppMode::SEARCH_RESULTS);
+            } else if (!playing_playlist_name.empty()) {
+                current_playlist_name = playing_playlist_name;
+                current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
+                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(current_playlist_songs.size())) ? queue_index : 0;
+                scroll_offset = std::max(0, selection_index - 5);
+                set_mode(AppMode::PLAYLIST_VIEW);
             } else if (!play_queue.empty()) {
+                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(play_queue.size())) ? queue_index : 0;
+                scroll_offset = std::max(0, selection_index - 5);
                 set_mode(AppMode::QUEUE_VIEW);
             } else {
                 show_message("Queue is empty.");
@@ -573,7 +597,7 @@ void UI::handle_playback_input(int ch) {
         case 'r': case 'R': 
             if (!last_played_path.empty()) {
                 if (is_url(last_played_path) && !is_online()) {
-                    show_message("⚠️ Internet connection issue. Cannot stream track.");
+                    show_message("Network unavailable. Cannot stream track.");
                     break;
                 }
                 player.load(last_played_path);
@@ -601,7 +625,7 @@ void UI::handle_playback_input(int ch) {
             std::string url = get_user_input("Paste YouTube URL");
             if (!url.empty()) {
                 if (!is_online()) {
-                    show_message("⚠️ Internet connection issue. Cannot stream online URL.");
+                    show_message("Network unavailable. Cannot stream online URL.");
                     break;
                 }
                 show_message("Loading URL...");
@@ -614,6 +638,9 @@ void UI::handle_playback_input(int ch) {
                     player.load(stream_url);
                     last_played_path = stream_url;
                     player.set_property("force-media-title", url);
+                    is_playing_from_playlist = false;
+                    playing_playlist_name.clear();
+                    current_playback_source = PlaybackSource::NONE;
                     player.play();
                 } else {
                     show_message("Failed to load stream URL.");
@@ -635,6 +662,12 @@ void UI::handle_playback_input(int ch) {
             break;
         case 'v': case 'V':
             cycle_visualizer();
+            break;
+        case '>': case '.': case 'n': case 'N':
+            play_next();
+            break;
+        case '<': case ',': case 'b': case 'B':
+            play_previous();
             break;
         case KEY_UP: 
             if (lyrics_scroll_offset > 0) lyrics_scroll_offset--; 
@@ -714,6 +747,8 @@ void UI::handle_library_input(int ch) {
                     }
                     
                     is_playing_from_playlist = false;
+                    playing_playlist_name.clear();
+                    current_playback_source = PlaybackSource::LIBRARY;
                     player.play();
                     set_mode(AppMode::PLAYBACK);
                 }
@@ -740,7 +775,7 @@ void UI::handle_search_input_input(int ch) {
     } else if (ch == 10) { // Enter
         if (!search_query.empty()) {
             if (!is_online()) {
-                show_message("⚠️ Internet connection issue. Please check your network.");
+                show_message("Network unavailable. Please check your connection.");
                 return;
             }
             set_mode(AppMode::SEARCH_RESULTS);
@@ -754,7 +789,7 @@ void UI::handle_search_input_input(int ch) {
             scroll_offset = 0;
             if (search_results.empty()) {
                 if (!is_online()) {
-                    show_message("⚠️ Internet connection issue: Unable to reach YouTube.");
+                    show_message("Network unavailable: Unable to reach YouTube.");
                 } else {
                     show_message("No results found for: " + search_query);
                 }
@@ -821,32 +856,25 @@ void UI::handle_search_results_input(int ch) {
         case 10: // Enter
             if (!search_results.empty() && selection_index < static_cast<int>(search_results.size())) {
                 if (!is_online()) {
-                    show_message("⚠️ Internet connection issue. Cannot stream track.");
+                    show_message("Network unavailable. Cannot stream track.");
                     break;
                 }
                 show_message("Streaming track...");
                 wnoutrefresh(help_win);
                 doupdate(); 
                 
-                try {
-                    player.stop();
-                    fetch_current_lyrics(search_results[selection_index].title, search_results[selection_index].url);
-                    player.load(search_results[selection_index].url);
-                    last_played_path = search_results[selection_index].url;
-                    player.set_property("force-media-title", search_results[selection_index].title);
-                    
-                    play_queue.clear();
-                    for (const auto& res : search_results) {
-                        play_queue.push_back({res.title, res.url, res.duration});
-                    }
-                    queue_index = selection_index;
-                    is_playing_from_playlist = false;
-                    
-                    player.play();
-                    set_mode(AppMode::PLAYBACK);
-                } catch (const std::exception& e) {
-                    show_message(std::string("Cannot play: ") + e.what());
+                play_queue.clear();
+                for (const auto& res : search_results) {
+                    play_queue.push_back({res.title, res.url, res.duration});
                 }
+                queue_index = selection_index;
+                track_retry_count = 0;
+                is_playing_from_playlist = false;
+                playing_playlist_name.clear();
+                current_playback_source = PlaybackSource::SEARCH;
+                
+                start_track_playback(search_results[selection_index].title, search_results[selection_index].url);
+                set_mode(AppMode::PLAYBACK);
             }
             break;
         case 'a': case 'A':
@@ -1142,26 +1170,22 @@ void UI::handle_playlist_view_input(int ch) {
             if (!current_playlist_songs.empty() && selection_index < static_cast<int>(current_playlist_songs.size())) {
                 auto song = current_playlist_songs[selection_index];
                 if (is_url(song.url) && !is_online()) {
-                    show_message("⚠️ Internet connection issue. Cannot play online track.");
+                    show_message("Network unavailable. Cannot play online track.");
                     break;
                 }
-                try {
-                    player.stop();
-                    fetch_current_lyrics(song.title, song.url);
-                    player.load(song.url);
-                    last_played_path = song.url;
-                    player.set_property("force-media-title", song.title);
-                    
-                    play_queue = current_playlist_songs;
-                    queue_index = selection_index;
-                    playing_playlist_name = current_playlist_name;
-                    is_playing_from_playlist = true;
-                    
-                    player.play();
-                    set_mode(AppMode::PLAYBACK);
-                } catch (const std::exception& e) {
-                    show_message(std::string("Playback error: ") + e.what());
-                }
+                show_message("Playing: " + song.title);
+                wnoutrefresh(help_win);
+                doupdate();
+
+                play_queue = current_playlist_songs;
+                queue_index = selection_index;
+                track_retry_count = 0;
+                playing_playlist_name = current_playlist_name;
+                is_playing_from_playlist = true;
+                current_playback_source = PlaybackSource::PLAYLIST;
+                
+                start_track_playback(song.title, song.url);
+                set_mode(AppMode::PLAYBACK);
             }
             break;
     }
@@ -1522,24 +1546,17 @@ void UI::handle_queue_input(int ch) {
             break;
         case 10: // Enter
             if (!play_queue.empty() && selection_index < static_cast<int>(play_queue.size())) {
-                queue_index = selection_index;
-                const auto& song = play_queue[queue_index];
+                const auto& song = play_queue[selection_index];
                 if (is_url(song.url) && !is_online()) {
-                    show_message("⚠️ Internet connection issue. Cannot play online track.");
+                    show_message("Network unavailable. Cannot play online track.");
                     break;
                 }
-                
-                try {
-                    player.stop();
-                    fetch_current_lyrics(song.title, song.url);
-                    player.load(song.url);
-                    last_played_path = song.url;
-                    player.set_property("force-media-title", song.title);
-                    player.play();
-                    set_mode(AppMode::PLAYBACK);
-                } catch (const std::exception& e) {
-                    show_message(std::string("Playback error: ") + e.what());
-                }
+                queue_index = selection_index;
+                track_retry_count = 0;
+                current_playback_source = PlaybackSource::QUEUE;
+                show_message("Playing: " + song.title);
+                start_track_playback(song.title, song.url);
+                set_mode(AppMode::PLAYBACK);
             }
             break;
         case 'd': case 'D':
@@ -1658,6 +1675,101 @@ std::string UI::get_user_input(const std::string& prompt) {
     return input;
 }
 
+bool UI::confirm_quit() {
+    int height, width;
+    getmaxyx(stdscr, height, width);
+    
+    int win_h = 7;
+    int win_w = std::min(46, width - 4);
+    if (win_w < 32) win_w = 32;
+    int start_y = (height - win_h) / 2;
+    int start_x = (width - win_w) / 2;
+    
+    WINDOW* confirm_win = newwin(win_h, win_w, start_y, start_x);
+    keypad(confirm_win, TRUE);
+
+    int selected = 1; // Default to NO for safe navigation
+    int ch;
+
+    const std::string prompt = "Wanna quit listening?";
+    int prompt_x = (win_w - static_cast<int>(prompt.length())) / 2;
+    if (prompt_x < 2) prompt_x = 2;
+
+    curs_set(0);
+
+    while (true) {
+        werase(confirm_win);
+        wbkgd(confirm_win, COLOR_PAIR(1));
+        box(confirm_win, 0, 0);
+
+        // Title on top border
+        wattron(confirm_win, COLOR_PAIR(1) | A_BOLD);
+        mvwprintw(confirm_win, 0, 2, " Confirmation ");
+        wattroff(confirm_win, COLOR_PAIR(1) | A_BOLD);
+
+        // Prompt question in center
+        wattron(confirm_win, COLOR_PAIR(1) | A_BOLD);
+        mvwprintw(confirm_win, 2, prompt_x, "%s", prompt.c_str());
+        wattroff(confirm_win, COLOR_PAIR(1) | A_BOLD);
+
+        // Symmetrical button placement
+        int btn_yes_x = win_w / 2 - 11;
+        int btn_no_x = win_w / 2 + 3;
+
+        if (selected == 0) { // YES highlighted
+            wattron(confirm_win, COLOR_PAIR(4) | A_BOLD | A_REVERSE);
+            mvwprintw(confirm_win, 4, btn_yes_x, "  YES  ");
+            wattroff(confirm_win, COLOR_PAIR(4) | A_BOLD | A_REVERSE);
+
+            wattron(confirm_win, COLOR_PAIR(1));
+            mvwprintw(confirm_win, 4, btn_no_x, "[  NO  ]");
+            wattroff(confirm_win, COLOR_PAIR(1));
+        } else { // NO highlighted
+            wattron(confirm_win, COLOR_PAIR(1));
+            mvwprintw(confirm_win, 4, btn_yes_x, "[ YES ]");
+            wattroff(confirm_win, COLOR_PAIR(1));
+
+            wattron(confirm_win, COLOR_PAIR(2) | A_BOLD | A_REVERSE);
+            mvwprintw(confirm_win, 4, btn_no_x, "   NO   ");
+            wattroff(confirm_win, COLOR_PAIR(2) | A_BOLD | A_REVERSE);
+        }
+
+        const std::string hint = "[< >] Choose  [Enter] Confirm";
+        int hint_x = (win_w - static_cast<int>(hint.length())) / 2;
+        if (hint_x < 1) hint_x = 1;
+        wattron(confirm_win, A_DIM);
+        mvwprintw(confirm_win, 5, hint_x, "%s", hint.c_str());
+        wattroff(confirm_win, A_DIM);
+
+        wnoutrefresh(confirm_win);
+        doupdate();
+
+        ch = wgetch(confirm_win);
+        if (ch == 27) { // ESC -> cancel
+            selected = 1; // NO
+            break;
+        } else if (ch == 10) { // Enter -> confirm choice
+            break;
+        } else if (ch == 'y' || ch == 'Y') {
+            selected = 0;
+            break;
+        } else if (ch == 'n' || ch == 'N') {
+            selected = 1;
+            break;
+        } else if (ch == KEY_LEFT || ch == KEY_RIGHT || ch == KEY_UP || ch == KEY_DOWN || 
+                   ch == '\t' || ch == 'h' || ch == 'l' || ch == 'j' || ch == 'k') {
+            selected = (selected == 0) ? 1 : 0;
+        }
+    }
+
+    delwin(confirm_win);
+    clear();
+    refresh();
+    draw();
+
+    return (selected == 0);
+}
+
 void UI::fetch_current_lyrics(std::string title_override, std::string url_override) {
     (void)url_override;
     std::string title = title_override;
@@ -1720,6 +1832,7 @@ void UI::load_themes() {
     themes.push_back({"Midnight", COLOR_BLUE, COLOR_MAGENTA, COLOR_CYAN, COLOR_RED, -1, COLOR_CYAN, COLOR_BLACK});
     themes.push_back({"Matrix", COLOR_GREEN, COLOR_GREEN, COLOR_GREEN, COLOR_RED, -1, COLOR_GREEN, COLOR_BLACK});
     themes.push_back({"Nord", COLOR_CYAN, COLOR_BLUE, COLOR_WHITE, COLOR_RED, -1, COLOR_CYAN, COLOR_BLACK});
+    themes.push_back({"HyDE", COLOR_MAGENTA, COLOR_CYAN, COLOR_MAGENTA, COLOR_WHITE, -1, COLOR_MAGENTA, COLOR_BLACK});
 }
 
 void UI::apply_theme() {

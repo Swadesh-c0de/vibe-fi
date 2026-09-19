@@ -28,14 +28,15 @@ static void print_help(const char* prog_name) {
               << "  " << prog_name << " --version | -v       Show version information\n\n"
               << "Controls:\n"
               << "  SPACE       Play / Pause toggle\n"
+              << "  N / B       Next / Previous track in queue\n"
               << "  Left/Right  Seek backward / forward 5s\n"
               << "  +/-         Volume adjustment\n"
               << "  S           Search YouTube\n"
               << "  L           Browse Local Music Library\n"
               << "  P           Manage Playlists\n"
               << "  C           Interactive Play Queue\n"
-              << "  T           Cycle Themes (Midnight, Matrix, Nord)\n"
-              << "  V           Cycle Visualizers (Neon Flame, Stereo Bars, Pulse)\n"
+              << "  T           Cycle Themes (Midnight, Matrix, Nord, HyDE)\n"
+              << "  V           Cycle Visualizers (Cava Wave, Neon Flame, Stereo Bars)\n"
               << "  ESC / Q     Back / Quit\n";
 }
 
