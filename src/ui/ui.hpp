@@ -170,6 +170,7 @@ private:
     WINDOW* create_window(int height, int width, int starty, int startx);
     
     void load_themes();
+    void load_saved_settings();
     void apply_theme();
     void cycle_theme();
     void cycle_visualizer();

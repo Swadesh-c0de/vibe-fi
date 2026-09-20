@@ -54,6 +54,7 @@ UI::UI(Player& p)
     use_default_colors();
     
     load_themes();
+    load_saved_settings();
     apply_theme();
 
     refresh(); // Refresh stdscr before creating windows
@@ -395,7 +396,7 @@ void UI::draw_search_results() {
     
     if (search_results.empty()) {
         std::string msg = is_online() ? "No results found or searching..." 
-                                      : "⚠️ Internet connection issue: Unable to connect to YouTube.";
+                                      : "Network unavailable: Unable to connect to YouTube.";
         mvwprintw(main_win, height / 2, (width - static_cast<int>(msg.length())) / 2, "%s", msg.c_str());
     } else {
         int title_col_width = width - 20;
@@ -1857,6 +1858,7 @@ void UI::cycle_theme() {
     current_theme_idx = (current_theme_idx + 1) % themes.size();
     apply_theme();
     show_message("Theme: " + themes[current_theme_idx].name);
+    save_state();
     clear();
     refresh();
 }
@@ -1871,6 +1873,43 @@ void UI::cycle_visualizer() {
     else if (current_visualizer_mode == VisualizerMode::STEREO_BARS) name = "Stereo Bars";
     
     show_message("Visualizer: " + name);
+    save_state();
+}
+
+void UI::load_saved_settings() {
+    std::string state_file = get_vibe_dir() + "/state.ini";
+    std::ifstream in(state_file);
+    if (!in.is_open()) {
+        const char* home = getenv("HOME");
+        if (home) {
+            in.open(std::string(home) + "/.vibe-fi-state.ini");
+        }
+    }
+    if (!in.is_open()) return;
+
+    std::string line;
+    while (std::getline(in, line)) {
+        size_t eq = line.find('=');
+        if (eq != std::string::npos) {
+            std::string key = line.substr(0, eq);
+            std::string val = line.substr(eq + 1);
+            if (key == "theme") {
+                for (size_t i = 0; i < themes.size(); ++i) {
+                    if (themes[i].name == val) {
+                        current_theme_idx = static_cast<int>(i);
+                        break;
+                    }
+                }
+            } else if (key == "visualizer") {
+                int vm = safe_stoi(val, 0);
+                if (vm >= 0 && vm < 3) {
+                    current_visualizer_mode = static_cast<VisualizerMode>(vm);
+                }
+            } else if (key == "autoplay") {
+                autoplay_enabled = (val == "1" || val == "true");
+            }
+        }
+    }
 }
 
 void UI::save_state() {
@@ -1885,8 +1924,13 @@ void UI::save_state() {
         out << "title=" << current_title << "\n";
         out << "position=" << player.get_position() << "\n";
         out << "volume=" << player.get_volume() << "\n";
-        out << "playlist=" << current_playlist_name << "\n";
+        out << "playlist=" << (is_playing_from_playlist ? current_playlist_name : "") << "\n";
         out << "index=" << queue_index << "\n";
+        if (current_theme_idx >= 0 && current_theme_idx < static_cast<int>(themes.size())) {
+            out << "theme=" << themes[current_theme_idx].name << "\n";
+        }
+        out << "visualizer=" << static_cast<int>(current_visualizer_mode) << "\n";
+        out << "autoplay=" << (autoplay_enabled ? "1" : "0") << "\n";
     }
 }
 
@@ -1929,7 +1973,7 @@ void UI::load_state() {
     
     if (!path.empty()) {
         if (is_url(path) && !is_online()) {
-            show_message("⚠️ Internet connection issue. Cannot resume online track.");
+            show_message("Network unavailable. Cannot resume online track.");
             return;
         }
         show_message("Resuming session...");
@@ -1942,11 +1986,16 @@ void UI::load_state() {
             current_playlist_songs = playlist_manager.get_playlist_songs(playlist);
             play_queue = current_playlist_songs;
             is_playing_from_playlist = true;
+            current_playback_source = PlaybackSource::PLAYLIST;
             if (index >= 0 && index < static_cast<int>(play_queue.size())) {
                 if (saved_title.empty()) {
                     saved_title = play_queue[index].title;
                 }
             }
+        } else {
+            is_playing_from_playlist = false;
+            playing_playlist_name.clear();
+            current_playback_source = PlaybackSource::NONE;
         }
 
         player.set_property("start", std::to_string(position));
