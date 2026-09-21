@@ -75,9 +75,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Automatic update check on startup
+    // Fast, zero-network cached update check on startup
     if (!skip_update) {
-        prompt_and_handle_update(argc, argv, false);
+        if (check_and_prompt_cached_update(argc, argv)) {
+            return 0;
+        }
     }
 
     try {

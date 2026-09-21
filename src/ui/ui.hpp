@@ -13,6 +13,9 @@
 #include <ncurses.h>
 #include <chrono>
 #include <memory>
+#include <atomic>
+#include <mutex>
+#include <cstdint>
 
 struct Theme {
     std::string name;
@@ -178,6 +181,15 @@ private:
     int last_key;
     std::string get_user_input(const std::string& prompt);
     bool confirm_quit();
+
+    // Background update notification
+    std::string cached_available_update;
+    int64_t last_update_check_time = 0;
+    std::string update_dismissed_version;
+    std::atomic<bool> has_pending_update_notification{false};
+    std::string pending_update_version;
+    std::mutex update_notification_mutex;
+    void notify_update_available(const std::string& version);
 };
 
 #endif // UI_HPP

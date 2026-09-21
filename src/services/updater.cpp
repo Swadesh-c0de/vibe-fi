@@ -1,11 +1,16 @@
 #include "updater.hpp"
 #include "utils.hpp"
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <vector>
 #include <array>
 #include <cstdlib>
 #include <filesystem>
+#include <thread>
+#include <atomic>
+#include <chrono>
+#include <mutex>
 #include <unistd.h>
 
 #if defined(__APPLE__)
@@ -13,6 +18,71 @@
 #endif
 
 namespace fs = std::filesystem;
+
+static std::mutex g_ini_mutex;
+
+static void update_ini_key(const std::string& key, const std::string& value) {
+    std::lock_guard<std::mutex> lock(g_ini_mutex);
+    std::string path = get_vibe_dir() + "/state.ini";
+    std::ifstream in(path);
+    std::vector<std::pair<std::string, std::string>> entries;
+    bool found = false;
+
+    if (in.is_open()) {
+        std::string line;
+        while (std::getline(in, line)) {
+            size_t eq = line.find('=');
+            if (eq != std::string::npos) {
+                std::string k = line.substr(0, eq);
+                std::string v = line.substr(eq + 1);
+                if (k == key) {
+                    if (!value.empty()) {
+                        entries.push_back({k, value});
+                    }
+                    found = true;
+                } else {
+                    entries.push_back({k, v});
+                }
+            }
+        }
+        in.close();
+    }
+
+    if (!found && !value.empty()) {
+        entries.push_back({key, value});
+    }
+
+    std::ofstream out(path);
+    if (out.is_open()) {
+        for (const auto& entry : entries) {
+            out << entry.first << "=" << entry.second << "\n";
+        }
+    }
+}
+
+static std::string read_ini_key(const std::string& key) {
+    std::lock_guard<std::mutex> lock(g_ini_mutex);
+    std::string path = get_vibe_dir() + "/state.ini";
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        const char* home = getenv("HOME");
+        if (home) {
+            in.open(std::string(home) + "/.vibe-fi-state.ini");
+        }
+    }
+    if (!in.is_open()) return "";
+
+    std::string line;
+    while (std::getline(in, line)) {
+        size_t eq = line.find('=');
+        if (eq != std::string::npos) {
+            std::string k = line.substr(0, eq);
+            std::string v = line.substr(eq + 1);
+            if (k == key) return v;
+        }
+    }
+    return "";
+}
 
 std::string check_latest_version(int timeout_seconds) {
     std::string curl_path = find_executable("curl");
@@ -135,14 +205,14 @@ std::string get_current_executable_path(const char* argv0) {
 }
 
 bool perform_update(const std::string& latest_version, const std::string& current_exe_path) {
-    std::cout << "\n\033[1;36m=============================================================\033[0m\n";
-    std::cout << "  \033[1;32m Updating Vibe-Fi to " << latest_version << "...\033[0m\n";
-    std::cout << "\033[1;36m=============================================================\033[0m\n\n";
+    std::cout << "\n\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n";
+    std::cout << "  \033[1;37mUpdating Vibe-Fi to " << latest_version << "...\033[0m\n";
+    std::cout << "\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n\n";
 
     std::string git = find_executable("git");
     std::string cmake = find_executable("cmake");
     if (git.empty() || cmake.empty()) {
-        std::cerr << "Error: git and cmake are required to perform an update.\n";
+        std::cerr << ":: Error: git and cmake are required to perform an update.\n";
         return false;
     }
 
@@ -151,43 +221,43 @@ bool perform_update(const std::string& latest_version, const std::string& curren
     fs::remove_all(temp_dir, ec);
     fs::create_directories(temp_dir, ec);
 
-    std::cout << "📥 Cloning latest repository source (" << latest_version << ")...\n";
+    std::cout << ":: Fetching latest repository source (" << latest_version << ")...\n";
     std::string clone_cmd = "git clone --depth 1 https://github.com/Swadesh-c0de/vibe-fi.git " + shell_escape(temp_dir.string());
     int ret = std::system(clone_cmd.c_str());
     if (ret != 0) {
-        std::cerr << "Failed to clone repository.\n";
+        std::cerr << ":: Error: Failed to clone repository.\n";
         fs::remove_all(temp_dir, ec);
         return false;
     }
 
-    std::cout << "⚙️  Configuring Release build...\n";
+    std::cout << ":: Configuring Release build...\n";
     std::string build_dir = (temp_dir / "build").string();
     std::string cfg_cmd = "cmake -B " + shell_escape(build_dir) +
                           " -DCMAKE_BUILD_TYPE=Release -S " + shell_escape(temp_dir.string()) + " >/dev/null";
     ret = std::system(cfg_cmd.c_str());
     if (ret != 0) {
-        std::cerr << "CMake build configuration failed.\n";
+        std::cerr << ":: Error: CMake build configuration failed.\n";
         fs::remove_all(temp_dir, ec);
         return false;
     }
 
-    std::cout << "🔨 Compiling Vibe-Fi binary...\n";
+    std::cout << ":: Compiling Vibe-Fi binary...\n";
     std::string build_cmd = "cmake --build " + shell_escape(build_dir) + " -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2) >/dev/null";
     ret = std::system(build_cmd.c_str());
     if (ret != 0) {
-        std::cerr << "Compilation failed.\n";
+        std::cerr << ":: Error: Compilation failed.\n";
         fs::remove_all(temp_dir, ec);
         return false;
     }
 
     fs::path built_bin = temp_dir / "build" / "vibe_fi";
     if (!fs::exists(built_bin)) {
-        std::cerr << "Compiled binary not found.\n";
+        std::cerr << ":: Error: Compiled binary not found.\n";
         fs::remove_all(temp_dir, ec);
         return false;
     }
 
-    std::cout << "📦 Atomically installing updated binary...\n";
+    std::cout << ":: Installing updated binary...\n";
     std::vector<std::string> target_paths;
     if (!current_exe_path.empty()) {
         target_paths.push_back(current_exe_path);
@@ -211,7 +281,7 @@ bool perform_update(const std::string& latest_version, const std::string& curren
             (!fs::exists(target_p) || access(target.c_str(), W_OK) == 0)) {
             install_cmd = "install -m 755 " + shell_escape(built_bin.string()) + " " + shell_escape(target);
         } else {
-            std::cout << "🔒 Administrator permission required to write to " << target << "...\n";
+            std::cout << ":: Administrator permission required for: " << target << "...\n";
             install_cmd = "sudo install -m 755 " + shell_escape(built_bin.string()) + " " + shell_escape(target);
         }
 
@@ -234,7 +304,7 @@ bool prompt_and_handle_update(int argc, char* argv[], bool force_check) {
     std::string latest = check_latest_version(2);
     if (latest.empty()) {
         if (force_check) {
-            std::cout << "Could not fetch latest release info from GitHub (offline or rate-limited).\n";
+            std::cout << ":: Could not fetch latest release info from GitHub (offline or rate-limited).\n";
         }
         return false;
     }
@@ -242,16 +312,16 @@ bool prompt_and_handle_update(int argc, char* argv[], bool force_check) {
     std::string current = VIBE_FI_VERSION;
     if (!is_newer_version(latest, current)) {
         if (force_check) {
-            std::cout << "✨ Vibe-Fi is already up to date (" << current << ")!\n";
+            std::cout << ":: Vibe-Fi is up to date (" << current << ").\n";
         }
         return false;
     }
 
     // Display update notification banner
-    std::cout << "\n\033[1;36m=============================================================\033[0m\n";
-    std::cout << "  \033[1;33m✨ A new version of Vibe-Fi is available!\033[0m\n";
-    std::cout << "     Current: \033[0;31m" << current << "\033[0m  ➔  Latest: \033[1;32m" << latest << "\033[0m\n";
-    std::cout << "\033[1;36m=============================================================\033[0m\n";
+    std::cout << "\n\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n";
+    std::cout << "  \033[1;37mA new version of Vibe-Fi is available\033[0m\n";
+    std::cout << "  Current: \033[0;31m" << current << "\033[0m  ->  Latest: \033[1;32m" << latest << "\033[0m\n";
+    std::cout << "\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n";
     std::cout << "Do you want to update now? [\033[1;32my\033[0m/\033[1;31mN\033[0m]: ";
     std::cout.flush();
 
@@ -272,17 +342,256 @@ bool prompt_and_handle_update(int argc, char* argv[], bool force_check) {
         std::string current_exe = get_current_executable_path(argv[0]);
         bool ok = perform_update(latest, current_exe);
         if (ok) {
-            std::cout << "✅ Update completed successfully!\n";
-            std::cout << "Resuming Vibe-Fi (" << latest << ")...\n\n";
+            update_ini_key("available_update", "");
+            update_ini_key("update_dismissed", "");
+            std::cout << ":: Update completed successfully.\n";
+            std::cout << ":: Resuming Vibe-Fi (" << latest << ")...\n\n";
             execvp(current_exe.c_str(), argv);
             execvp(argv[0], argv);
             return true;
         } else {
-            std::cout << "⚠️  Update failed. Continuing with existing version...\n\n";
+            std::cout << ":: Update failed. Continuing with existing version...\n\n";
             return false;
         }
     } else {
-        std::cout << "⏩ Skipping update for now. Starting Vibe-Fi...\n\n";
+        std::cout << "-> Skipping update for now. Starting Vibe-Fi...\n\n";
         return false;
     }
 }
+
+bool check_and_prompt_cached_update(int argc, char* argv[]) {
+    (void)argc;
+    if (!isatty(fileno(stdin))) {
+        return false;
+    }
+
+    std::string available = read_ini_key("available_update");
+    if (available.empty()) {
+        return false;
+    }
+
+    std::string current = VIBE_FI_VERSION;
+    if (!is_newer_version(available, current)) {
+        update_ini_key("available_update", "");
+        return false;
+    }
+
+    std::string dismissed = read_ini_key("update_dismissed");
+    if (dismissed == available) {
+        return false;
+    }
+
+    // Display instant update notification banner (0ms network delay!)
+    std::cout << "\n\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n";
+    std::cout << "  \033[1;37mA new version of Vibe-Fi is available\033[0m\n";
+    std::cout << "  Current: \033[0;31m" << current << "\033[0m  ->  Latest: \033[1;32m" << available << "\033[0m\n";
+    std::cout << "\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n";
+    std::cout << "Do you want to update now? [\033[1;32my\033[0m/\033[1;31mN\033[0m]: ";
+    std::cout.flush();
+
+    std::string response;
+    if (!std::getline(std::cin, response)) {
+        return false;
+    }
+
+    // Trim whitespace
+    while (!response.empty() && (response.front() == ' ' || response.front() == '\t')) {
+        response.erase(response.begin());
+    }
+    while (!response.empty() && (response.back() == ' ' || response.back() == '\t' || response.back() == '\r')) {
+        response.pop_back();
+    }
+
+    if (response == "y" || response == "Y" || response == "yes" || response == "Yes" || response == "YES") {
+        std::string current_exe = get_current_executable_path(argv[0]);
+        bool ok = perform_update(available, current_exe);
+        if (ok) {
+            update_ini_key("available_update", "");
+            update_ini_key("update_dismissed", "");
+            std::cout << ":: Update completed successfully.\n";
+            std::cout << ":: Resuming Vibe-Fi (" << available << ")...\n\n";
+            execvp(current_exe.c_str(), argv);
+            execvp(argv[0], argv);
+            return true;
+        } else {
+            std::cout << ":: Update failed. Continuing with existing version...\n\n";
+            return false;
+        }
+    } else {
+        update_ini_key("update_dismissed", available);
+        std::cout << "-> Skipping update for now. Starting Vibe-Fi...\n\n";
+        return false;
+    }
+}
+
+static std::thread g_bg_update_thread;
+static std::atomic<bool> g_bg_update_running{false};
+
+void start_background_update_check(std::function<void(const std::string&)> on_update_found) {
+    if (g_bg_update_running.exchange(true)) {
+        return; // Already running
+    }
+
+    g_bg_update_thread = std::thread([on_update_found]() {
+        // Sleep 5 seconds to let UI and audio startup finish smoothly
+        for (int i = 0; i < 50 && g_bg_update_running; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (!g_bg_update_running) return;
+
+        // Rate limiting: check at most once per 24 hours (86400 seconds)
+        std::string last_check_str = read_ini_key("last_update_check");
+        int64_t last_check = safe_stoll(last_check_str, 0);
+        auto now = std::chrono::system_clock::now();
+        int64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+
+        if (last_check > 0 && (now_sec - last_check) < 86400) {
+            g_bg_update_running = false;
+            return;
+        }
+
+        // Quick connectivity check before making network call
+        if (!is_online(1000)) {
+            g_bg_update_running = false;
+            return;
+        }
+
+        std::string latest = check_latest_version(5);
+        if (!g_bg_update_running) return;
+
+        // Record check timestamp
+        update_ini_key("last_update_check", std::to_string(now_sec));
+
+        if (!latest.empty() && is_newer_version(latest, VIBE_FI_VERSION)) {
+            update_ini_key("available_update", latest);
+            if (on_update_found && g_bg_update_running) {
+                on_update_found(latest);
+            }
+        }
+
+        g_bg_update_running = false;
+    });
+}
+
+void stop_background_update_check() {
+    g_bg_update_running = false;
+    if (g_bg_update_thread.joinable()) {
+        g_bg_update_thread.detach();
+    }
+}
+
+bool handle_uninstall(const char* argv0) {
+    std::cout << "\n\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n";
+    std::cout << "  \033[1;37mVibe-Fi Uninstaller\033[0m\n";
+    std::cout << "\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n";
+    std::cout << "This will remove the Vibe-Fi executable from your system.\n\n";
+
+    std::vector<std::string> candidate_paths;
+    std::string current_exe = get_current_executable_path(argv0);
+    if (!current_exe.empty()) {
+        candidate_paths.push_back(current_exe);
+    }
+
+    const char* home = std::getenv("HOME");
+    if (home) {
+        candidate_paths.push_back(std::string(home) + "/.local/bin/vibe");
+        candidate_paths.push_back(std::string(home) + "/.local/bin/vibe_fi");
+    }
+    candidate_paths.push_back("/usr/local/bin/vibe");
+    candidate_paths.push_back("/usr/local/bin/vibe_fi");
+    candidate_paths.push_back("/usr/bin/vibe");
+    candidate_paths.push_back("/usr/bin/vibe_fi");
+
+    std::vector<std::string> existing_binaries;
+    for (const auto& path : candidate_paths) {
+        std::error_code ec;
+        if (fs::exists(path, ec) || fs::is_symlink(path, ec)) {
+            bool dup = false;
+            for (const auto& ex : existing_binaries) {
+                if (path == ex) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) {
+                existing_binaries.push_back(path);
+            }
+        }
+    }
+
+    if (existing_binaries.empty()) {
+        std::cout << ":: No installed Vibe-Fi binaries detected on standard system paths.\n\n";
+    } else {
+        std::cout << "Detected binary installation(s):\n";
+        for (const auto& bin : existing_binaries) {
+            std::cout << "  -> \033[0;36m" << bin << "\033[0m\n";
+        }
+        std::cout << "\n";
+    }
+
+    std::cout << "Are you sure you want to uninstall Vibe-Fi? [\033[1;32my\033[0m/\033[1;31mN\033[0m]: ";
+    std::cout.flush();
+
+    std::string response;
+    if (!std::getline(std::cin, response)) {
+        return false;
+    }
+
+    while (!response.empty() && (response.front() == ' ' || response.front() == '\t')) response.erase(response.begin());
+    while (!response.empty() && (response.back() == ' ' || response.back() == '\t' || response.back() == '\r')) response.pop_back();
+
+    if (response != "y" && response != "Y" && response != "yes" && response != "Yes" && response != "YES") {
+        std::cout << "-> Uninstallation cancelled. No changes were made.\n\n";
+        return false;
+    }
+
+    std::cout << "\nRemoving binaries...\n";
+    for (const auto& bin : existing_binaries) {
+        std::error_code ec;
+        fs::path p(bin);
+        if (access(p.c_str(), W_OK) == 0 && access(p.parent_path().c_str(), W_OK) == 0) {
+            if (fs::remove(p, ec)) {
+                std::cout << "  [removed] " << bin << "\n";
+            } else {
+                std::cout << "  [error] Failed to remove: " << bin << " (" << ec.message() << ")\n";
+            }
+        } else {
+            std::cout << "  :: Administrator permission required for: " << bin << "...\n";
+            std::string rm_cmd = "sudo rm -f " + shell_escape(bin);
+            int ret = std::system(rm_cmd.c_str());
+            if (ret == 0) {
+                std::cout << "  [removed] " << bin << "\n";
+            } else {
+                std::cout << "  [error] Failed to remove " << bin << " via sudo.\n";
+            }
+        }
+    }
+
+    // Ask regarding data & playlists
+    std::string vibe_dir = get_vibe_dir();
+    std::error_code dir_ec;
+    if (fs::exists(vibe_dir, dir_ec)) {
+        std::cout << "\nDo you also want to remove your playlists and configuration (~/.vibe-fi)? [\033[1;32my\033[0m/\033[1;31mN\033[0m]: ";
+        std::cout.flush();
+
+        std::string dir_resp;
+        if (std::getline(std::cin, dir_resp)) {
+            while (!dir_resp.empty() && (dir_resp.front() == ' ' || dir_resp.front() == '\t')) dir_resp.erase(dir_resp.begin());
+            while (!dir_resp.empty() && (dir_resp.back() == ' ' || dir_resp.back() == '\t' || dir_resp.back() == '\r')) dir_resp.pop_back();
+
+            if (dir_resp == "y" || dir_resp == "Y" || dir_resp == "yes" || dir_resp == "Yes" || dir_resp == "YES") {
+                fs::remove_all(vibe_dir, dir_ec);
+                std::cout << "  [removed] " << vibe_dir << "\n";
+            } else {
+                std::cout << "  [retained] " << vibe_dir << " (playlists and settings preserved)\n";
+            }
+        }
+    }
+
+    std::cout << "\n\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n";
+    std::cout << "  \033[1;32mVibe-Fi has been successfully uninstalled.\033[0m\n";
+    std::cout << "\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n\n";
+
+    return true;
+}
+

@@ -1,6 +1,7 @@
 #include "ui.hpp"
 #include "utils.hpp"
 #include "mpris.hpp"
+#include "updater.hpp"
 #include <ncurses.h>
 #include <cmath>
 #include <vector>
@@ -65,9 +66,15 @@ UI::UI(Player& p)
 
     // Start background MPRIS listener (actions polled thread-safely in UI loop)
     start_mpris_server();
+
+    // Start background update check (rate-limited, queries GitHub after 5s)
+    start_background_update_check([this](const std::string& version) {
+        this->notify_update_available(version);
+    });
 }
 
 UI::~UI() {
+    stop_background_update_check();
     stop_mpris_server();
     save_state();
 
@@ -188,6 +195,19 @@ void UI::run() {
                     break;
                 case MprisAction::NONE:
                     break;
+            }
+        }
+
+        // Check for update notification from background thread
+        if (has_pending_update_notification.load()) {
+            std::string ver;
+            {
+                std::lock_guard<std::mutex> lock(update_notification_mutex);
+                ver = pending_update_version;
+                has_pending_update_notification.store(false);
+            }
+            if (!ver.empty()) {
+                show_message("Update available: " + ver + " (restart or vibe -u)");
             }
         }
 
@@ -1907,6 +1927,12 @@ void UI::load_saved_settings() {
                 }
             } else if (key == "autoplay") {
                 autoplay_enabled = (val == "1" || val == "true");
+            } else if (key == "available_update") {
+                cached_available_update = val;
+            } else if (key == "last_update_check") {
+                last_update_check_time = safe_stoll(val, 0);
+            } else if (key == "update_dismissed") {
+                update_dismissed_version = val;
             }
         }
     }
@@ -1931,7 +1957,23 @@ void UI::save_state() {
         }
         out << "visualizer=" << static_cast<int>(current_visualizer_mode) << "\n";
         out << "autoplay=" << (autoplay_enabled ? "1" : "0") << "\n";
+        if (!cached_available_update.empty()) {
+            out << "available_update=" << cached_available_update << "\n";
+        }
+        if (last_update_check_time > 0) {
+            out << "last_update_check=" << last_update_check_time << "\n";
+        }
+        if (!update_dismissed_version.empty()) {
+            out << "update_dismissed=" << update_dismissed_version << "\n";
+        }
     }
+}
+
+void UI::notify_update_available(const std::string& version) {
+    std::lock_guard<std::mutex> lock(update_notification_mutex);
+    cached_available_update = version;
+    pending_update_version = version;
+    has_pending_update_notification.store(true);
 }
 
 void UI::load_state() {
