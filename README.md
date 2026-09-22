@@ -84,16 +84,16 @@ Written in clean C++17, Vibe-Fi pairs the audio horsepower of `libmpv` with a li
 ## Features
 
 ### Direct YouTube Streaming
-Just type `vibe "song query"` or hit <kbd>S</kbd> inside the app. Audio streams resolve and pipe directly through `yt-dlp` into `libmpv`. No video decoding, no GPU drain, no browser tabs, no ads. You can also paste raw YouTube URLs on the fly (<kbd>U</kbd>) to stream live sets, mixes, or podcasts.
+Just type `vibe "song query"` or hit <kbd>S</kbd> inside the app. Audio streams resolve and pipe directly through `yt-dlp` into `libmpv`. Automatic stream recovery ensures smooth, uninterrupted playback even on unstable connections. No video decoding, no GPU drain, no browser tabs, no ads. You can also paste raw YouTube URLs on the fly (<kbd>U</kbd>) to stream live sets, mixes, or podcasts.
 
 ### Lossless Local Audio Crawler
 Hit <kbd>L</kbd> to browse your local music collection. It handles `.flac`, `.mp3`, `.wav`, `.m4a`, `.ogg`, `.opus`, `.aac`, `.alac`, `.aiff`, and `.webm`. Song durations are cached in memory so folder hopping feels instant. Add any highlighted track to a playlist with <kbd>A</kbd>.
 
 ### Physics-Driven Audio Visualizers
 Real-time audio telemetry extracted directly from FFmpeg's `@astats` filter — measuring RMS loudness, peak spikes, and zero-crossing pitch dynamics:
-- **Neon Flame** *(Default)*: A dual-mirrored frequency volcano erupting from the center with floating peak gravity caps (`▔`) and real-time metronome tracking.
-- **Stereo Bars**: Classic 8-band graphic equalizer with left/right channel separation and natural decay physics.
-- **Radial Pulse**: Subwoofer ripple bursting outward on transient bass kicks.
+- **Cava Wave** *(Default)*: CAVA-style continuous fluid spectrum with Monstercat neighbor smoothing, parabolic gravity ballistics, and multi-tier dynamic theme gradients.
+- **Neon Flame**: A dual-mirrored frequency volcano erupting from the center with floating peak gravity caps (`▔`) and real-time metronome tracking.
+- **Stereo Bars**: Classic graphic equalizer with left/right channel separation and natural decay physics.
 
 Cycle between them anytime with <kbd>V</kbd>.
 
@@ -107,13 +107,14 @@ Native Linux D-Bus service (`org.mpris.MediaPlayer2`). Play, pause, and skip usi
 Show off what you're listening to on your Discord profile through raw Unix domain sockets (`discord-ipc-0`). No bloated Node.js tools, Electron daemons, or bridge scripts required.
 
 ### Dotfile-Friendly Playlists & State Memory
-Create, rename, reorder, and move songs across playlists (<kbd>P</kbd>), or export any list to standard `.m3u` (<kbd>E</kbd>). Closed your terminal? Hit <kbd>R</kbd> at launch to restore your exact track position and volume from `~/.vibe-fi/state.ini`.
+Create, rename, reorder, and move songs across playlists (<kbd>P</kbd>), or export any list to standard `.m3u` (<kbd>E</kbd>). Closed your terminal? Hit <kbd>R</kbd> at launch to restore your exact track position and volume from `~/.vibe-fi/state.ini`. Your active theme and visualizer modes are also remembered automatically across launches.
 
 ### Curated Color Themes
-Press <kbd>T</kbd> to cycle between three themes crafted to look great in native terminal environments:
+Press <kbd>T</kbd> to cycle between four themes crafted to look great in native terminal environments (your last used theme is saved and restored automatically on next launch):
 - **Midnight**: Deep indigo borders, electric cyan spectrum, magenta highlights.
 - **Matrix**: Phosphor green monochrome hacker aesthetic.
 - **Nord**: Arctic cyan borders, clean frost-white levels, cool blue accents.
+- **HyDE**: Velvet magenta borders, violet and lavender wave spectrum, vivid cyan highlights.
 
 ---
 
@@ -124,7 +125,7 @@ Press <kbd>T</kbd> to cycle between three themes crafted to look great in native
 | **YouTube Streaming** | **Built-in (`yt-dlp`)** | ❌ No | ❌ No | ⚠️ Complex scripts |
 | **Lossless Local Audio** | **Native C++17** | ✅ Yes | ❌ No | ✅ Yes |
 | **Synchronized LRC Lyrics** | **Real-time (`lrclib`)** | ❌ No | ❌ No | ⚠️ External daemon |
-| **Built-in DSP Visualizer** | **3 Modes (Physics)** | ❌ No | ❌ No | ⚠️ Requires Cava |
+| **Built-in DSP Visualizer** | **3 Modes (Physics & Wave)** | ❌ No | ❌ No | ⚠️ Requires Cava |
 | **Zero-Config Setup** | **Single binary** | ✅ Yes | ❌ Spotify API / Premium | ❌ MPD config & server |
 | **Linux MPRIS (`playerctl`)** | **Native D-Bus** | ⚠️ Plugin | ⚠️ Partial | ⚠️ Plugin |
 | **Discord Rich Presence** | **Native Unix IPC** | ❌ No | ⚠️ Third-party | ⚠️ Third-party |
@@ -259,6 +260,7 @@ vibe ~/Music/Daft_Punk/Random_Access_Memories.flac
 
 # Flags
 vibe --update      # Check for and install latest updates
+vibe --uninstall   # Uninstall Vibe-Fi binaries and setup
 vibe --no-update   # Skip automatic startup update check
 vibe --version     # Display version information
 vibe --help        # Display usage guide
@@ -274,6 +276,22 @@ bind = $mainMod, M, exec, alacritty --class "music-player" -e vibe
 windowrulev2 = float, class:^(music-player)$
 windowrulev2 = size 1000 620, class:^(music-player)$
 ```
+
+### Uninstallation
+
+You can easily uninstall Vibe-Fi at any time using either method:
+
+**From anywhere in your terminal:**
+```bash
+vibe --uninstall
+```
+
+**Or from the repository directory:**
+```bash
+./uninstall.sh
+```
+
+Both methods safely prompt for confirmation before deleting binaries, and ask whether you want to preserve or delete your playlists and configurations (`~/.vibe-fi`).
 
 ---
 
@@ -305,6 +323,8 @@ windowrulev2 = size 1000 620, class:^(music-player)$
 | Key | Action |
 | :---: | :--- |
 | <kbd>SPACE</kbd> | Toggle Play / Pause |
+| <kbd>N</kbd> / <kbd>></kbd> | Next track in queue |
+| <kbd>B</kbd> / <kbd><</kbd> | Previous track in queue |
 | <kbd>←</kbd> / <kbd>→</kbd> | Seek backward / forward 5 seconds |
 | <kbd>+</kbd> / <kbd>-</kbd> | Volume Up / Down |
 | <kbd>S</kbd> | Open YouTube search dialog |
@@ -312,12 +332,13 @@ windowrulev2 = size 1000 620, class:^(music-player)$
 | <kbd>P</kbd> | Browse custom playlists |
 | <kbd>C</kbd> | View current play queue |
 | <kbd>U</kbd> | Input direct YouTube URL to stream |
-| <kbd>V</kbd> | Cycle visualizer (`Neon Flame` &rarr; `Stereo Bars` &rarr; `Pulse`) |
-| <kbd>T</kbd> | Cycle theme (`Midnight` &rarr; `Matrix` &rarr; `Nord`) |
+| <kbd>V</kbd> | Cycle visualizer (`Cava Wave` &rarr; `Neon Flame` &rarr; `Stereo Bars`) |
+| <kbd>T</kbd> | Cycle theme (`Midnight` &rarr; `Matrix` &rarr; `Nord` &rarr; `HyDE`) |
 | <kbd>O</kbd> | Toggle Autoplay (`ON` / `OFF`) |
 | <kbd>R</kbd> | Replay track (or restore session from launch screen) |
 | <kbd>Q</kbd> | Jump to active playlist or search result queue |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Scroll synced lyrics manually |
+| <kbd>ESC</kbd> | Quit (with confirmation prompt) |
 
 ### Library & Playlists
 
@@ -348,12 +369,13 @@ windowrulev2 = size 1000 620, class:^(music-player)$
 | **Midnight** *(Default)* | Deep Indigo | Electric Cyan | Magenta |
 | **Matrix** | Terminal Green | Phosphor Green | Bright Green |
 | **Nord** | Arctic Cyan | Clean Frost White | Cool Blue |
+| **HyDE** | Velvet Magenta | Violet & Lavender Wave | Vivid Cyan |
 
 ### Visualizers (<kbd>V</kbd>)
 
-1. **Neon Flame** *(Default)*: Center-erupting frequency volcano with dancing columns, floating gravity peak caps (`▔`), and rhythmic metronome tracking.
-2. **Stereo Bars**: Classic 8-band graphic equalizer with left/right channel balance.
-3. **Pulse**: Center subwoofer ripple bursting outward on transient bass kicks.
+1. **Cava Wave** *(Default)*: CAVA-style continuous fluid spectrum with Monstercat neighbor smoothing, parabolic gravity ballistics, and multi-tier dynamic theme gradients.
+2. **Neon Flame**: Center-erupting frequency volcano with dancing columns, floating gravity peak caps (`▔`), and rhythmic metronome tracking.
+3. **Stereo Bars**: Classic graphic equalizer with left/right channel balance.
 
 ---
 
@@ -363,7 +385,7 @@ No hidden binary databases or opaque files. Everything is kept readable and vers
 
 ```
 ~/.vibe-fi/
-├── state.ini                   # Saved session: last track URL, seek position, volume, active playlist
+├── state.ini                   # Saved session: track URL, seek pos, volume, playlist, active theme
 ├── playlists/                  # Plaintext playlist files (Title|URL|Duration)
 │   ├── Chill.txt
 │   ├── Synthwave.txt

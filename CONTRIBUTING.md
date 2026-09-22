@@ -41,9 +41,9 @@ Adding a visualizer to Vibe-Fi is clean and modular. Follow these steps:
 1. **Update Enum**: Add your identifier to `VisualizerMode` in `src/ui/visualizer.hpp`:
    ```cpp
    enum class VisualizerMode {
+       CAVA_WAVE,
        NEON_FLAME,
        STEREO_BARS,
-       PULSE,
        YOUR_NEW_MODE // Add here
    };
    ```
@@ -95,6 +95,10 @@ To ensure stability across all Linux distributions and long listening sessions, 
    - Never call `wrefresh(win)` or `refresh()` inside individual draw routines.
    - Use `werase(win)` &rarr; draw elements &rarr; `wnoutrefresh(win)`.
    - Let the main loop invoke `doupdate()` **once** per frame.
+
+5. **Autoplay Queue Progression & Error Recovery**:
+   - Autoplay must strictly advance to the next track upon confirmed natural EOF (`consume_track_finished()`).
+   - Never advance the queue based solely on `is_idle()`. Stream or decoding errors must trigger automatic retry or pause safely to avoid runaway queue skipping.
 
 ---
 

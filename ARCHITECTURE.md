@@ -25,6 +25,7 @@ Vibe-Fi is a terminal-based music client for Linux and macOS. It was engineered 
 vibe-fi/
 ├── CMakeLists.txt              # Modern target-based CMake build configuration
 ├── install.sh                  # Multi-distro automatic package & install script
+├── uninstall.sh                # Interactive uninstaller script
 ├── README.md                   # User-facing manual & controls
 ├── ARCHITECTURE.md             # This document
 │
@@ -46,14 +47,15 @@ vibe-fi/
     │   ├── lyrics.hpp / .cpp   # lrclib.net REST queries, LRC parser, local disk cache
     │   ├── playlist_manager.hpp# Playlist CRUD, duplicate guard, M3U export
     │   ├── playlist_manager.cpp
-    │   └── search.hpp / .cpp   # Safe yt-dlp parameter pipeline & JSON extraction
+    │   ├── search.hpp / .cpp   # Safe yt-dlp parameter pipeline & JSON extraction
+    │   └── updater.hpp / .cpp  # Background update checker, cached prompt & uninstaller
     │
     ├── integrations/           # [DOMAIN: OS & Desktop Hooks]
     │   ├── mpris.hpp / .cpp    # Linux D-Bus MPRIS (org.mpris.MediaPlayer2) media keys
     │   └── discord_rpc.hpp/.cpp# Native Unix socket Discord IPC client
     │
     └── utils/                  # [DOMAIN: Cross-Platform Utilities]
-        ├── utils.hpp           # Shell escaping, process pipes, safe_stof, paths
+        ├── utils.hpp           # Shell escaping, process pipes, safe_stof, safe_stoll, paths
         └── utils.cpp           # UTF-8 text sanitization, dynamic binary discovery
 ```
 
@@ -78,8 +80,15 @@ The `Player` class encapsulates a single `mpv_handle*` with strict RAII ownershi
     - `lavfi.astats.Overall.RMS_level` ➔ Perceived overall loudness in dB.
     - `lavfi.astats.Overall.Peak_level` ➔ Instantaneous peak hit in dB.
     - `lavfi.astats.1.RMS_level` & `2.RMS_level` ➔ Left and Right channel discrete levels.
-    - `Zero_crossings_rate` ➔ Frequency distribution indicator (low for bass, high for treble).
-  - Converts decibels to normalized linear values `[0.0, 1.0]` over a `-50 dB` to `0 dB` range.
+- **Resilient Network Streaming & Buffering**:
+  - `stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5`: Seamlessly reconnects remote audio streams on transient TCP drops or packet loss.
+  - `demuxer-max-bytes=32MiB` & `demuxer-readahead-secs=60`: Pre-buffers up to 32 MB (~25 minutes) of audio in memory to eliminate playback stutter.
+  - `network-timeout=30` and `ytdl-raw-options`: Ensures 30-second connection headroom and 3 automated retries on extractor queries.
+  - Modern browser User-Agent configuration to prevent HTTP 403 Forbidden errors from remote media CDNs.
+- **Event Lifecycle Management (`poll_events`)**:
+  - Non-blockingly dequeues libmpv events (`mpv_wait_event(mpv, 0)`) to maintain internal ring-buffer health.
+  - Captures `MPV_EVENT_START_FILE`, `MPV_EVENT_FILE_LOADED`, and `MPV_EVENT_END_FILE`.
+  - Accurately discriminates between `MPV_END_FILE_REASON_EOF` (natural song completion), `MPV_END_FILE_REASON_ERROR` (stream/decoding failure), and `MPV_END_FILE_REASON_STOP`.
 
 ### 3.2. Visualizer Engine (`src/ui/Visualizer`)
 
@@ -89,17 +98,16 @@ Visualizers run at 30 FPS inside the designated curses window.
   - When a track loads, its title is hashed using the DJB2 algorithm.
   - Generates genre-adaptive parameters: `bpm` (74–160 BPM), `bass_weight`, `mid_weight`, `treble_weight`, and `rhythm_swing`.
 - **Modes**:
-  1. **`NEON_FLAME`** *(Option 1)*:
-     - Symmetrical dual-mirrored geyser layout.
-     - Center columns represent sub-bass and kick drums; outer columns represent hi-hats.
+  1. **`CAVA_WAVE`** *(Option 1)*:
+     - Continuous fluid wave spectrum utilizing CAVA's Monstercat smoothing algorithm.
+     - Asymmetric gravity ballistics with multi-tier dynamic theme gradients.
+  2. **`NEON_FLAME`** *(Option 2)*:
+     - Dual-mirrored volcano erupting from the center with dancing frequency columns.
      - Header integrates an active 4-beat rhythm metronome (`[♫ ● ○ ○ ○ ]` -> `[♫ ○ ● ○ ○ ]`).
-     - Snappy attack (`0.90f`) and fast decay (`0.26f`) keep bars constantly bouncing.
-     - Luminous floating peak caps (`✦`, `▲`, `▔`) accelerate downwards with gravity (`g = 0.65f`).
-  2. **`STEREO_BARS`** *(Option 2)*:
+     - Snappy attack and fast decay keep bars bouncing with luminous floating peak caps.
+  3. **`STEREO_BARS`** *(Option 3)*:
      - Classic linear graphic equalizer spectrum.
      - Discrete stereo channel separation: left channels drive the left side, right channels drive the right side.
-  3. **`PULSE`** *(Option 3)*:
-     - Radial subwoofer ripple expanding outward from the center on bass transients.
 - **UTF-8 Fractional Sub-Block Rendering**:
   - Utilizes unicode block elements ` ` (1/8) to `█` (8/8) to achieve 8x vertical resolution inside terminal character cells.
 
@@ -116,6 +124,10 @@ Visualizers run at 30 FPS inside the designated curses window.
   - `Midnight`: Blue/Cyan/Magenta palette.
   - `Matrix`: Cyberpunk Emerald/Green/Lime palette.
   - `Nord`: Arctic Blue/Frost palette.
+  - `HyDE`: Violet/Lavender/Cyan palette.
+- **Autoplay Engine & Auto-Retry Recovery**:
+  - Autoplay transitions strictly trigger on natural track completion (`consume_track_finished()` ➔ `EOF`).
+  - Automatic Retry: When a stream error occurs (`consume_playback_error()`), Vibe-Fi automatically attempts up to 2 retries on the current track with clear status messages. If retries are exhausted, it pauses safely rather than cascading skips across the queue.
 - **Window Hierarchy**:
   Uses ncurses sub-windows refreshed via `wnoutrefresh()` followed by a single atomic `doupdate()` per frame to eliminate terminal flicker.
 
@@ -136,6 +148,10 @@ Visualizers run at 30 FPS inside the designated curses window.
   - Maintains an in-memory duration cache to prevent disk seek thrashing during scrolling.
 - **`Search`**:
   - Invokes `yt-dlp` safely using `exec` argument vectors rather than shell string concatenation, preventing command injection vulnerabilities.
+- **`Updater`**:
+  - `check_and_prompt_cached_update()`: Reads cached release tags from `state.ini` on startup with 0ms network delay.
+  - `start_background_update_check()`: Non-blocking worker thread querying GitHub Releases once per 24 hours while music is playing.
+  - `handle_uninstall()`: Interactively and safely unlinks binaries and prompts for optional `~/.vibe-fi` purge.
 
 ### 3.5. Desktop Integrations (`src/integrations/`)
 
@@ -156,22 +172,24 @@ Visualizers run at 30 FPS inside the designated curses window.
         ▼
 main.cpp: setlocale(LC_ALL, ""); setlocale(LC_NUMERIC, "C");
         │
-        ├── Checks flags (--help, --version)
+        ├── Checks flags (--help, --version, --update, --uninstall, --no-update)
+        ├── Check cached update prompt (< 0.1ms disk read, 0ms network delay)
         ├── If CLI argument passed: loads URL, file, or search query into initial queue
         │
         ▼
 Player::Player()
         ├── mpv_create()
         ├── Set headless options (vo=null, audio-display=no)
-        ├── Attach @astats filter
+        ├── Attach @astats filter & resilient reconnect options
         └── mpv_initialize()
         │
         ▼
 UI::UI()
         ├── initscr(), cbreak(), noecho(), nodelay(TRUE), keypad(TRUE)
-        ├── init_pair() theme palette initialization
+        ├── load_themes(), load_saved_settings(), apply_theme() (restores last-used theme)
         ├── Start background D-Bus MPRIS thread (if Linux)
-        └── Connect Discord RPC socket
+        ├── Connect Discord RPC socket
+        └── Spawn start_background_update_check() thread (rate-limited to 24h)
         │
         ▼
 UI::run() [Main Event Loop ~30 FPS]
@@ -184,20 +202,28 @@ UI::run() [Main Event Loop ~30 FPS]
         │      └── Check track progress, auto-play next track if song finished
         │      └── Read real-time @astats (RMS, Peak, Pitch)
         │
-        ├── 3. Update active view:
+        ├── 3. Check background worker notifications:
+        │      └── If update discovered: show status notice safely on UI thread
+        │
+        ├── 4. Update active view:
         │      ├── Visualizer::render() (Physics, attack/decay, Unicode bars)
         │      ├── LyricsManager auto-scroll tracking active timestamp
         │      └── View drawing (Library, Playlists, Queue)
         │
-        ├── 4. Atomic render: doupdate()
+        ├── 5. Atomic render: doupdate()
         │
-        └── 5. 33ms frame pacing: napms(30)
+        └── 6. 33ms frame pacing: napms(30)
         │
-[User presses ESC on intro / exit]
+[User presses ESC on playback screen]
+        │
+        ▼
+confirm_quit() modal
+        ├── "Wanna quit listening? [ YES ] [ NO ]"
+        └── If YES: break loop; if NO: return to playback seamlessly
         │
         ▼
 UI::save_state()
-        ├── Write ~/.vibe-fi/state.ini (path, seek_pos, volume, playlist)
+        ├── Write ~/.vibe-fi/state.ini (path, seek_pos, volume, playlist, theme, visualizer, update cache)
         └── End curses mode: endwin()
 ```
 
@@ -210,12 +236,16 @@ All user configuration, state, and cache directories live under `~/.vibe-fi/`:
 ```
 ~/.vibe-fi/
 │
-├── state.ini                   # Session state restored by pressing [R] on launch
+├── state.ini                   # Session state ([R] recovery) & persistent preferences (theme, visualizer)
 │   ├── path=https://...        # Last played URL or file path
 │   ├── position=142.5          # Seek time in seconds
 │   ├── volume=85               # Volume level (0-100)
 │   ├── playlist=Chill          # Active playlist name (if applicable)
-│   └── title=Track Title       # Track title for instant lyrics recovery
+│   ├── title=Track Title       # Track title for instant lyrics recovery
+│   ├── theme=Midnight          # Active theme (restored automatically on launch)
+│   ├── visualizer=0            # Active visualizer index (restored automatically)
+│   ├── available_update=v1.2.0 # Cached release tag discovered in background
+│   └── last_update_check=...   # Unix timestamp of last GitHub check (24h rate limit)
 │
 ├── playlists/                  # Plaintext playlist files
 │   ├── Favorites.txt           # Records formatted as: Title|URL|Duration
@@ -249,13 +279,13 @@ graph TD
         VISUALIZER["src/ui/Visualizer<br/>(Physics & Math Renderer)"]
         
         MODES{"VisualizerMode"}
+        CAVA["CAVA_WAVE<br/>(Monstercat Fluid Spectrum)"]
         NEON["NEON_FLAME<br/>(Volcano + Metronome)"]
         BARS["STEREO_BARS<br/>(8x Sub-block Linear)"]
-        PULSE["PULSE<br/>(Radial Subwoofer)"]
         
+        MODES --> CAVA
         MODES --> NEON
         MODES --> BARS
-        MODES --> PULSE
         VISUALIZER --> MODES
         UI --> VISUALIZER
     end

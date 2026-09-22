@@ -10,7 +10,7 @@ This document serves as the operational manual and mental model for AI coding ag
 - **Primary Languages**: C++17, CMake, Bash
 - **Core Dependencies**: `libmpv` (Audio), `ncurses` (TUI), `yt-dlp` (Stream resolver), `dbus-1` (Linux media keys)
 - **Build System**: CMake (>= 3.16)
-- **Binary Targets**: `./build/vibe_fi` ➔ installed as `vibe` (`~/.local/bin/vibe` or `/usr/local/bin/vibe`)
+- **Binary Targets**: `./build/vibe_fi` ➔ installed as `vibe` (`~/.local/bin/vibe` or `/usr/local/bin/vibe`), uninstalled via `vibe --uninstall` or `./uninstall.sh`
 
 ---
 
@@ -26,7 +26,7 @@ graph TD
     classDef storage fill:#744210,stroke:#975a16,stroke-width:2px,color:#fff;
 
     subgraph ENTRY ["1. Process Bootstrap"]
-        MAIN["src/main.cpp<br/>- Locale setup (LC_NUMERIC='C')<br/>- CLI Argument Parser<br/>- Initial queue loading"]:::entrypoint
+        MAIN["src/main.cpp<br/>- Locale setup (LC_NUMERIC='C')<br/>- CLI Argument Parser<br/>- Cached update prompt<br/>- Initial queue loading"]:::entrypoint
     end
 
     subgraph AUDIO ["2. Audio Core"]
@@ -40,14 +40,14 @@ graph TD
         VISUALIZER["src/ui/Visualizer<br/>- Track profiling (DJB2 hash)<br/>- Attack / Decay / Gravity physics<br/>- Sub-block Unicode renderer"]:::ui
         
         MODES{"VisualizerMode"}
+        CAVA["CAVA_WAVE<br/>(Monstercat Fluid Spectrum)"]:::ui
         NEON["NEON_FLAME<br/>(Volcano + Metronome)"]:::ui
         BARS["STEREO_BARS<br/>(8x Sub-block Linear EQ)"]:::ui
-        PULSE["PULSE<br/>(Radial Subwoofer Ripple)"]:::ui
         
         VISUALIZER --> MODES
+        MODES --> CAVA
         MODES --> NEON
         MODES --> BARS
-        MODES --> PULSE
         UI --> VISUALIZER
     end
 
@@ -56,6 +56,7 @@ graph TD
         LIBRARY["src/services/Library<br/>- std::filesystem crawler<br/>- In-memory duration cache<br/>- Case-insensitive fuzzy search"]:::service
         PLAYLISTS["src/services/PlaylistManager<br/>- Plaintext CRUD (.txt)<br/>- Duplicate URL guard<br/>- M3U exporter"]:::service
         LYRICS["src/services/LyricsManager<br/>- lrclib.net REST query<br/>- [mm:ss.xx] timestamp parser<br/>- Active line auto-scroll"]:::service
+        UPDATER["src/services/Updater<br/>- Cached prompt (< 0.1ms)<br/>- 24h background thread<br/>- Uninstaller engine"]:::service
     end
 
     subgraph INTEGRATIONS ["5. OS & Desktop Hooks"]
@@ -64,7 +65,7 @@ graph TD
     end
 
     subgraph STORAGE ["6. Filesystem (~/.vibe-fi/)"]
-        STATE_INI["state.ini<br/>(Path, Seek, Vol, Playlist)"]:::storage
+        STATE_INI["state.ini<br/>(Path, Seek, Vol, Theme, Visualizer)"]:::storage
         PLAYLIST_FILES["playlists/*.txt<br/>(Title|URL|Duration)"]:::storage
         LYRICS_CACHE["cache/lyrics/*.json<br/>(LRC & Plain Lyrics)"]:::storage
     end
@@ -80,6 +81,7 @@ graph TD
     UI --> LIBRARY
     UI --> PLAYLISTS
     UI --> LYRICS
+    UI --> UPDATER
     
     UI --> MPRIS
     UI --> DISCORD
@@ -130,16 +132,17 @@ stateDiagram-v2
 | Path | Primary Class / Function | Purpose | Key Dependents |
 | :--- | :--- | :--- | :--- |
 | `src/main.cpp` | `main()`, `print_help()` | CLI bootstrap, locale setup, flag routing | `Player`, `UI` |
-| `src/core/player.hpp / .cpp` | `Player` | `libmpv` RAII wrapper, `@astats` extraction | `UI`, `Visualizer` |
+| `src/core/player.hpp / .cpp` | `Player` | `libmpv` RAII wrapper, stream reconnect, `@astats` extraction, event polling | `UI`, `Visualizer` |
 | `src/ui/visualizer.hpp / .cpp` | `Visualizer` | Physics calculations, spectrum rendering | `UI`, `Player` |
 | `src/ui/ui.hpp / .cpp` | `UI` | Event loop, curses layouts, keyboard input | `main.cpp` |
 | `src/services/library.hpp / .cpp` | `Library` | Local file crawler, format check, duration cache | `UI` |
 | `src/services/lyrics.hpp / .cpp` | `LyricsManager` | `lrclib.net` REST client, sync parser | `UI` |
 | `src/services/playlist_manager.hpp / .cpp` | `PlaylistManager` | Custom playlist CRUD, `.m3u` exporter | `UI` |
 | `src/services/search.hpp / .cpp` | `search_youtube()` | Safe `yt-dlp` query pipeline | `UI`, `main.cpp` |
+| `src/services/updater.hpp / .cpp` | `check_and_prompt_cached_update()`, `handle_uninstall()` | Cached startup prompt (< 0.1ms), 24h background check, uninstaller | `main.cpp`, `UI` |
 | `src/integrations/mpris.hpp / .cpp` | `MprisManager` | Linux D-Bus `org.mpris.MediaPlayer2` | `UI` |
 | `src/integrations/discord_rpc.hpp / .cpp` | `DiscordRPC` | Native Unix domain socket IPC | `UI` |
-| `src/utils/utils.hpp / .cpp` | `safe_stof()`, `find_executable()` | Utilities, path discovery, sanitization | All modules |
+| `src/utils/utils.hpp / .cpp` | `safe_stof()`, `safe_stoll()`, `find_executable()` | Utilities, path discovery, sanitization | All modules |
 
 ---
 
@@ -166,6 +169,15 @@ Terminal redrawing occurs 30 times per second.
 ### ⚠️ Invariant 5: Atomic Binary Replacement
 When compiling and updating the local executable:
 - **Rule**: Never use `cp build/vibe_fi ~/.local/bin/vibe` while `vibe` may be running in another terminal. Always use `install -m 755 ./build/vibe_fi ~/.local/bin/vibe` (which unlinks before writing, preventing `Text file busy` errors).
+
+### ⚠️ Invariant 6: Natural EOF vs. Error Discrimination in Autoplay
+When implementing queue progression or autoplay:
+- **Rule**: Never advance the queue based solely on `player.is_idle()`. Always verify natural EOF via `player.consume_track_finished()` (`MPV_END_FILE_REASON_EOF`).
+- **Failure Mode**: When network drops or stream extraction encounters an error (`MPV_END_FILE_REASON_ERROR`), the player transitions to idle; advancing on `is_idle()` causes runaway queue skips that wipe through user playlists.
+
+### ⚠️ Invariant 7: Background Worker Thread Safety & Monospace TUI Output
+- **Rule 1 (Thread Safety)**: Never invoke curses rendering functions (`show_message`, `wnoutrefresh`, `doupdate`) directly from background worker threads (MPRIS listener, updater background check). Background threads must communicate with the UI via atomic flags or thread-safe message queues consumed strictly on the main thread during `UI::run()`.
+- **Rule 2 (Monospace Alignment)**: Never output emojis in CLI error messages or TUI status bars. Use standard, aesthetic monospace ASCII/ANSI indicators (`::`, `->`, `[removed]`, `[retained]`, `[error]`) to avoid font-width rendering corruption across diverse terminal emulators.
 
 ---
 
