@@ -23,6 +23,7 @@ static void print_help(const char* prog_name) {
               << "  " << prog_name << " <file>               Play local audio file\n"
               << "  " << prog_name << " <search query>       Search and play track from YouTube\n"
               << "  " << prog_name << " --update | -u        Check and apply latest updates\n"
+              << "  " << prog_name << " --uninstall          Uninstall Vibe-Fi from your system\n"
               << "  " << prog_name << " --no-update          Skip startup update check\n"
               << "  " << prog_name << " --help | -h          Show this help message\n"
               << "  " << prog_name << " --version | -v       Show version information\n\n"
@@ -46,7 +47,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> startup_errors;
     std::vector<SearchResult> initial_queue;
 
-    // Check for help, version, or update flags
+    // Check for help, version, update, or uninstall flags
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -59,6 +60,10 @@ int main(int argc, char* argv[]) {
         }
         if (arg == "--update" || arg == "-u") {
             prompt_and_handle_update(argc, argv, true);
+            return 0;
+        }
+        if (arg == "--uninstall") {
+            handle_uninstall(argv[0]);
             return 0;
         }
     }

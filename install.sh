@@ -160,9 +160,12 @@ main() {
     echo "  - [L]        Local Audio Library"
     echo "  - [P]        Custom Playlists"
     echo "  - [C]        View Play Queue"
-    echo "  - [T]        Cycle Themes (Midnight / Matrix / Nord)"
-    echo "  - [V]        Cycle Visualizers (Neon Flame / Stereo Bars / Pulse)"
+    echo "  - [T]        Cycle Themes (Midnight / Matrix / Nord / HyDE)"
+    echo "  - [V]        Cycle Visualizers (Cava Wave / Neon Flame / Stereo Bars)"
     echo "  - [ESC / Q]  Back / Quit"
+    echo ""
+    echo "Uninstallation:"
+    echo "  Run 'vibe --uninstall' or './uninstall.sh' anytime to remove Vibe-Fi."
     echo ""
 }
 
