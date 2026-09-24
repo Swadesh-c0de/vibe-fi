@@ -16,7 +16,7 @@
 std::string check_latest_version(int timeout_seconds = 2);
 
 /**
- * Compares two semantic version strings (e.g. "v1.2.0" vs "1.1.1").
+ * Compares two semantic version strings (e.g. "v1.2.0" vs "1.1.2").
  * Returns true if latest is strictly newer than current.
  */
 bool is_newer_version(const std::string& latest, const std::string& current);
