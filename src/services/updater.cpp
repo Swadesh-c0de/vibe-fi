@@ -426,13 +426,20 @@ bool check_and_prompt_cached_update(int argc, char* argv[]) {
 
 static std::thread g_bg_update_thread;
 static std::atomic<bool> g_bg_update_running{false};
+static std::mutex g_update_cb_mutex;
+static std::function<void(const std::string&)> g_on_update_found = nullptr;
 
 void start_background_update_check(std::function<void(const std::string&)> on_update_found) {
     if (g_bg_update_running.exchange(true)) {
         return; // Already running
     }
 
-    g_bg_update_thread = std::thread([on_update_found]() {
+    {
+        std::lock_guard<std::mutex> lock(g_update_cb_mutex);
+        g_on_update_found = on_update_found;
+    }
+
+    g_bg_update_thread = std::thread([]() {
         // Sleep 5 seconds to let UI and audio startup finish smoothly
         for (int i = 0; i < 50 && g_bg_update_running; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -464,8 +471,9 @@ void start_background_update_check(std::function<void(const std::string&)> on_up
 
         if (!latest.empty() && is_newer_version(latest, VIBE_FI_VERSION)) {
             update_ini_key("available_update", latest);
-            if (on_update_found && g_bg_update_running) {
-                on_update_found(latest);
+            std::lock_guard<std::mutex> lock(g_update_cb_mutex);
+            if (g_on_update_found && g_bg_update_running) {
+                g_on_update_found(latest);
             }
         }
 
@@ -475,6 +483,10 @@ void start_background_update_check(std::function<void(const std::string&)> on_up
 
 void stop_background_update_check() {
     g_bg_update_running = false;
+    {
+        std::lock_guard<std::mutex> lock(g_update_cb_mutex);
+        g_on_update_found = nullptr;
+    }
     if (g_bg_update_thread.joinable()) {
         g_bg_update_thread.detach();
     }
@@ -563,6 +575,112 @@ bool handle_uninstall(const char* argv0) {
                 std::cout << "  [removed] " << bin << "\n";
             } else {
                 std::cout << "  [error] Failed to remove " << bin << " via sudo.\n";
+            }
+        }
+    }
+
+    // Clean isolated bottle directory (~/.vibe-fi/bottle)
+    std::string bottle_dir = get_bottle_dir();
+    BottleManifest manifest = read_bottle_manifest();
+    std::error_code bec;
+    if (fs::exists(bottle_dir, bec)) {
+        std::cout << "\nCleaning isolated bottle dependencies...\n";
+        if (fs::remove_all(bottle_dir, bec)) {
+            std::cout << "  [removed] " << bottle_dir << " (isolated dependencies cleaned)\n";
+        }
+    }
+
+    // Handle tracked system packages with reverse dependency checks
+    if (!manifest.installed_system_packages.empty()) {
+        std::vector<std::string> removable_pkgs;
+        std::cout << "\nChecking tracked system packages installed for Vibe-Fi...\n";
+        for (const auto& pkg : manifest.installed_system_packages) {
+            bool in_use = false;
+            if (manifest.package_manager == "apt") {
+                std::string check_cmd = "apt-cache rdepends --installed " + shell_escape(pkg) + " 2>/dev/null";
+                UniquePipe pipe(popen(check_cmd.c_str(), "r"));
+                if (pipe) {
+                    char buf[512];
+                    int count = 0;
+                    while (fgets(buf, sizeof(buf), pipe.get())) {
+                        std::string line(buf);
+                        if (line.find('|') != std::string::npos || (line.find("  ") == 0 && line.find(pkg) == std::string::npos)) {
+                            count++;
+                        }
+                    }
+                    in_use = (count > 0);
+                }
+            } else if (manifest.package_manager == "pacman") {
+                std::string check_cmd = "pacman -Qi " + shell_escape(pkg) + " 2>/dev/null | grep -E '^Required By\\s*:\\s*(None|none)' >/dev/null 2>&1";
+                int ret = std::system(check_cmd.c_str());
+                in_use = (ret != 0);
+            } else if (manifest.package_manager == "dnf" || manifest.package_manager == "zypper") {
+                std::string check_cmd = "rpm -q --whatrequires " + shell_escape(pkg) + " 2>/dev/null | grep -v 'no package requires' | grep -v 'is not installed' | grep '[^[:space:]]' >/dev/null 2>&1";
+                int ret = std::system(check_cmd.c_str());
+                in_use = (ret == 0);
+            } else if (manifest.package_manager == "brew") {
+                std::string check_cmd = "brew uses --installed " + shell_escape(pkg) + " 2>/dev/null";
+                UniquePipe pipe(popen(check_cmd.c_str(), "r"));
+                if (pipe) {
+                    char buf[512];
+                    if (fgets(buf, sizeof(buf), pipe.get())) {
+                        std::string line(buf);
+                        in_use = (!line.empty() && line.find_first_not_of(" \t\r\n") != std::string::npos);
+                    }
+                }
+            }
+
+            if (in_use) {
+                std::cout << "  :: Dependency Guard: " << pkg << " is now required by other software on your system.\n";
+                std::cout << "  [retained] " << pkg << " (skipping removal to prevent breaking other apps)\n";
+            } else {
+                removable_pkgs.push_back(pkg);
+            }
+        }
+
+        if (!removable_pkgs.empty()) {
+            std::cout << "\nThe following system package(s) were installed for Vibe-Fi and are not needed by other apps:\n";
+            for (const auto& pkg : removable_pkgs) {
+                std::cout << "  -> \033[0;36m" << pkg << "\033[0m\n";
+            }
+            std::cout << "Do you also want to remove these packages from your system? [\033[1;32my\033[0m/\033[1;31mN\033[0m]: ";
+            std::cout.flush();
+
+            std::string pkg_resp;
+            if (std::getline(std::cin, pkg_resp)) {
+                while (!pkg_resp.empty() && (pkg_resp.front() == ' ' || pkg_resp.front() == '\t')) pkg_resp.erase(pkg_resp.begin());
+                while (!pkg_resp.empty() && (pkg_resp.back() == ' ' || pkg_resp.back() == '\t' || pkg_resp.back() == '\r')) pkg_resp.pop_back();
+
+                if (pkg_resp == "y" || pkg_resp == "Y" || pkg_resp == "yes" || pkg_resp == "Yes") {
+                    std::string pkg_list;
+                    for (const auto& p : removable_pkgs) {
+                        pkg_list += " " + shell_escape(p);
+                    }
+                    std::string rm_pkg_cmd;
+                    if (manifest.package_manager == "brew") {
+                        rm_pkg_cmd = "brew uninstall" + pkg_list;
+                    } else if (manifest.package_manager == "apt") {
+                        rm_pkg_cmd = "sudo apt-get remove -y" + pkg_list;
+                    } else if (manifest.package_manager == "pacman") {
+                        rm_pkg_cmd = "sudo pacman -R --noconfirm" + pkg_list;
+                    } else if (manifest.package_manager == "dnf") {
+                        rm_pkg_cmd = "sudo dnf remove -y" + pkg_list;
+                    } else if (manifest.package_manager == "zypper") {
+                        rm_pkg_cmd = "sudo zypper remove -y" + pkg_list;
+                    }
+
+                    if (!rm_pkg_cmd.empty()) {
+                        std::cout << "Removing package(s)... (" << rm_pkg_cmd << ")\n";
+                        int ret = std::system(rm_pkg_cmd.c_str());
+                        if (ret == 0) {
+                            std::cout << "  [removed] Tracked system packages uninstalled.\n";
+                        } else {
+                            std::cout << "  [error] Package removal command exited with status " << ret << "\n";
+                        }
+                    }
+                } else {
+                    std::cout << "  [retained] System packages preserved.\n";
+                }
             }
         }
     }

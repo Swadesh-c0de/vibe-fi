@@ -36,6 +36,7 @@ UI::UI(Player& p)
       current_playback_source(PlaybackSource::NONE),
       queue_index(-1),
       track_retry_count(0),
+      lyrics_resolved_for_current_track(false),
       song_to_move_index(-1),
       last_key(0) 
 {
@@ -71,9 +72,14 @@ UI::UI(Player& p)
     start_background_update_check([this](const std::string& version) {
         this->notify_update_available(version);
     });
+
+    lyrics_state = std::make_shared<AsyncLyricsState>();
 }
 
 UI::~UI() {
+    if (lyrics_state) {
+        lyrics_state->ui_alive.store(false);
+    }
     stop_background_update_check();
     stop_mpris_server();
     save_state();
@@ -211,6 +217,22 @@ void UI::run() {
             }
         }
 
+        // Poll for asynchronously fetched lyrics without blocking UI or audio
+        if (lyrics_state) {
+            std::lock_guard<std::mutex> lock(lyrics_state->mutex);
+            if (lyrics_state->pending_result.ready) {
+                if (lyrics_state->pending_result.request_id == lyrics_state->request_id.load()) {
+                    current_lyrics_data = std::move(lyrics_state->pending_result.data);
+                    current_lyrics_title = lyrics_state->pending_result.title;
+                    current_lyrics_artist = lyrics_state->pending_result.artist;
+                    lyrics_scroll_offset = 0;
+                    lyrics_auto_scroll = true;
+                    lyrics_resolved_for_current_track = true;
+                }
+                lyrics_state->pending_result.ready = false;
+            }
+        }
+
         draw();
         handle_input();
         
@@ -230,7 +252,7 @@ void UI::run() {
                 if (track_retry_count < 2) {
                     track_retry_count++;
                     show_message("Streaming error, retrying... (" + std::to_string(track_retry_count) + "/2)");
-                    start_track_playback(song.title, song.url);
+                    start_track_playback(song.title, song.url, song.duration, is_playing_from_playlist ? playing_playlist_name : "");
                 } else {
                     track_retry_count = 0;
                     show_message("Failed to stream: " + song.title + " (press R to retry, N for next)");
@@ -241,11 +263,18 @@ void UI::run() {
             }
         }
 
-        // Auto-fetch lyrics as soon as media title metadata is resolved by player
+        // Auto-fetch lyrics only if the current track has no resolved lyrics yet and stream metadata becomes available
         if (mode == AppMode::PLAYBACK && (player.is_playing() || !player.is_idle())) {
-            std::string active_title = player.get_metadata("media-title");
-            if (!active_title.empty() && active_title != current_lyrics_title) {
-                fetch_current_lyrics(active_title, last_played_path);
+            if (!lyrics_resolved_for_current_track && !current_lyrics_data.has_synced &&
+                (current_lyrics_data.plain_lyrics.empty() || current_lyrics_data.plain_lyrics == "Fetching lyrics...")) {
+                std::string active_title = player.get_metadata("media-title");
+                if (active_title.empty()) active_title = player.get_metadata("metadata/by-key/title");
+                
+                if (!active_title.empty() && active_title != "videoplayback" && player.is_playing() &&
+                    (player.get_duration() > 0 || !player.get_metadata("metadata/by-key/uploader").empty())) {
+                    lyrics_resolved_for_current_track = true;
+                    fetch_current_lyrics(active_title, last_played_path);
+                }
             }
         }
     }
@@ -448,7 +477,18 @@ void UI::draw_search_results() {
 
 void UI::update_status() {
     werase(status_win);
-    draw_borders(status_win, "NOW PLAYING");
+
+    std::string status_tag = "NOW PLAYING";
+    if (player.is_loading()) {
+        status_tag = "NOW PLAYING [FETCHING]";
+    } else if (player.is_buffering()) {
+        status_tag = "NOW PLAYING [BUFFERING]";
+    } else if (player.is_paused()) {
+        status_tag = "NOW PLAYING [PAUSED]";
+    } else if (player.is_idle()) {
+        status_tag = "NOW PLAYING [IDLE]";
+    }
+    draw_borders(status_win, status_tag);
     
     int height, width;
     getmaxyx(status_win, height, width);
@@ -458,7 +498,13 @@ void UI::update_status() {
     if (title.empty()) {
         title = player.get_metadata("filename");
         if (title.empty()) {
-            title = player.is_playing() ? "Playing Audio Stream" : "Not Playing";
+            if (player.is_loading()) {
+                title = "Fetching audio stream...";
+            } else if (player.is_buffering()) {
+                title = "Buffering audio stream...";
+            } else {
+                title = player.is_playing() ? "Playing Audio Stream" : "Not Playing";
+            }
         }
     }
     
@@ -489,12 +535,20 @@ void UI::update_status() {
         wattroff(status_win, COLOR_PAIR(2));
         wprintw(status_win, "]");
         
-        int min_pos = static_cast<int>(pos) / 60;
-        int sec_pos = static_cast<int>(pos) % 60;
-        int min_dur = static_cast<int>(dur) / 60;
-        int sec_dur = static_cast<int>(dur) % 60;
-        
-        mvwprintw(status_win, 3, 2, "%02d:%02d / %02d:%02d", min_pos, sec_pos, min_dur, sec_dur);
+        std::string time_str = format_duration(pos) + " / " + format_duration(dur);
+        mvwprintw(status_win, 3, 2, "%s", time_str.c_str());
+    } else if (player.is_loading()) {
+        std::string fetch_hint = "Connecting to audio stream...";
+        int hx = std::max(2, (width - static_cast<int>(fetch_hint.length())) / 2);
+        wattron(status_win, COLOR_PAIR(2));
+        mvwprintw(status_win, 2, hx, "%s", fetch_hint.c_str());
+        wattroff(status_win, COLOR_PAIR(2));
+    } else if (player.is_buffering()) {
+        std::string buff_hint = "Buffering audio cache...";
+        int hx = std::max(2, (width - static_cast<int>(buff_hint.length())) / 2);
+        wattron(status_win, COLOR_PAIR(2));
+        mvwprintw(status_win, 2, hx, "%s", buff_hint.c_str());
+        wattroff(status_win, COLOR_PAIR(2));
     }
     
     std::string vol_str = "Vol: " + std::to_string(player.get_volume()) + "%";
@@ -513,7 +567,7 @@ void UI::update_help() {
         wattron(help_win, COLOR_PAIR(4));
         if (mode == AppMode::PLAYBACK) {
             std::string auto_str = autoplay_enabled ? "ON" : "OFF";
-            mvwprintw(help_win, 1, 2, "[SPACE] Pause [N/B] Next/Prev [Q] Queue [L] Library [S] Search [P] Playlist [R] Replay [O] Autoplay:%s [ESC] Quit", auto_str.c_str());
+            mvwprintw(help_win, 1, 2, "[SPACE] Pause [N/B] Next/Prev [C] Queue [L] Library [S] Search [P] Playlist [R] Replay [O] Autoplay:%s [ESC/Q] Quit", auto_str.c_str());
         } else if (mode == AppMode::LIBRARY_BROWSER) {
             mvwprintw(help_win, 1, 2, "[ENTER] Select/Play [BKSP] Parent Directory [ESC] Playback");
         } else if (mode == AppMode::SEARCH_INPUT) {
@@ -569,7 +623,7 @@ void UI::handle_input() {
 
 void UI::handle_playback_input(int ch) {
     switch (ch) {
-        case 27: 
+        case 27: case 'q': case 'Q':
             if (confirm_quit()) {
                 running = false; 
             }
@@ -584,37 +638,6 @@ void UI::handle_playback_input(int ch) {
             search_query = ""; 
             set_mode(AppMode::SEARCH_INPUT); 
             break;
-        case 'q': case 'Q':
-            if (current_playback_source == PlaybackSource::SEARCH && !search_results.empty()) {
-                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(search_results.size())) ? queue_index : 0;
-                scroll_offset = std::max(0, selection_index - 5);
-                set_mode(AppMode::SEARCH_RESULTS);
-            } else if (current_playback_source == PlaybackSource::PLAYLIST && !playing_playlist_name.empty()) {
-                current_playlist_name = playing_playlist_name;
-                current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
-                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(current_playlist_songs.size())) ? queue_index : 0;
-                scroll_offset = std::max(0, selection_index - 5);
-                set_mode(AppMode::PLAYLIST_VIEW);
-            } else if (current_playback_source == PlaybackSource::LIBRARY && !library_items.empty()) {
-                set_mode(AppMode::LIBRARY_BROWSER);
-            } else if (!search_results.empty()) {
-                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(search_results.size())) ? queue_index : 0;
-                scroll_offset = std::max(0, selection_index - 5);
-                set_mode(AppMode::SEARCH_RESULTS);
-            } else if (!playing_playlist_name.empty()) {
-                current_playlist_name = playing_playlist_name;
-                current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
-                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(current_playlist_songs.size())) ? queue_index : 0;
-                scroll_offset = std::max(0, selection_index - 5);
-                set_mode(AppMode::PLAYLIST_VIEW);
-            } else if (!play_queue.empty()) {
-                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(play_queue.size())) ? queue_index : 0;
-                scroll_offset = std::max(0, selection_index - 5);
-                set_mode(AppMode::QUEUE_VIEW);
-            } else {
-                show_message("Queue is empty.");
-            }
-            break;
         case 'r': case 'R': 
             if (!last_played_path.empty()) {
                 if (is_url(last_played_path) && !is_online()) {
@@ -623,6 +646,13 @@ void UI::handle_playback_input(int ch) {
                 }
                 player.load(last_played_path);
                 player.play();
+                lyrics_scroll_offset = 0;
+                lyrics_auto_scroll = true;
+                if (!lyrics_resolved_for_current_track || !current_lyrics_data.has_synced) {
+                    if (!current_lyrics_title.empty()) {
+                        fetch_current_lyrics(current_lyrics_title, last_played_path);
+                    }
+                }
                 show_message("Replaying...");
             }
             break;
@@ -649,20 +679,26 @@ void UI::handle_playback_input(int ch) {
                     show_message("Network unavailable. Cannot stream online URL.");
                     break;
                 }
-                show_message("Loading URL...");
+                show_message("Resolving stream URL...");
                 wnoutrefresh(help_win); 
                 doupdate();
-                std::string stream_url = get_youtube_stream_url(url);
-                if (!stream_url.empty()) {
+                StreamInfo info = resolve_stream_info(url);
+                if (!info.stream_url.empty()) {
                     player.stop();
-                    fetch_current_lyrics("Unknown", url);
-                    player.load(stream_url);
-                    last_played_path = stream_url;
-                    player.set_property("force-media-title", url);
+                    std::string display_title = info.title;
+                    if (!info.artist.empty() && display_title.find(" - ") == std::string::npos) {
+                        display_title = info.artist + " - " + display_title;
+                    }
+                    if (display_title.empty()) display_title = url;
+
+                    player.load(info.stream_url);
+                    last_played_path = info.stream_url;
+                    player.set_property("force-media-title", display_title);
                     is_playing_from_playlist = false;
                     playing_playlist_name.clear();
                     current_playback_source = PlaybackSource::NONE;
                     player.play();
+                    fetch_current_lyrics(display_title, info.stream_url);
                 } else {
                     show_message("Failed to load stream URL.");
                 }
@@ -674,9 +710,27 @@ void UI::handle_playback_input(int ch) {
             set_mode(AppMode::PLAYLIST_BROWSER);
             break;
         case 'c': case 'C':
-            selection_index = (queue_index >= 0) ? queue_index : 0;
-            scroll_offset = 0;
-            set_mode(AppMode::QUEUE_VIEW);
+            if (current_playback_source == PlaybackSource::SEARCH && !search_results.empty()) {
+                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(search_results.size())) ? queue_index : 0;
+                scroll_offset = std::max(0, selection_index - 5);
+                set_mode(AppMode::SEARCH_RESULTS);
+            } else if (current_playback_source == PlaybackSource::PLAYLIST && !playing_playlist_name.empty()) {
+                current_playlist_name = playing_playlist_name;
+                current_playlist_songs = playlist_manager.get_playlist_songs(current_playlist_name);
+                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(current_playlist_songs.size())) ? queue_index : 0;
+                scroll_offset = std::max(0, selection_index - 5);
+                set_mode(AppMode::PLAYLIST_VIEW);
+            } else if (current_playback_source == PlaybackSource::LIBRARY && !library_items.empty()) {
+                set_mode(AppMode::LIBRARY_BROWSER);
+            } else if (!play_queue.empty()) {
+                selection_index = (queue_index >= 0 && queue_index < static_cast<int>(play_queue.size())) ? queue_index : 0;
+                scroll_offset = std::max(0, selection_index - 5);
+                set_mode(AppMode::QUEUE_VIEW);
+            } else {
+                selection_index = (queue_index >= 0) ? queue_index : 0;
+                scroll_offset = 0;
+                set_mode(AppMode::QUEUE_VIEW);
+            }
             break;
         case 't': case 'T':
             cycle_theme();
@@ -894,7 +948,7 @@ void UI::handle_search_results_input(int ch) {
                 playing_playlist_name.clear();
                 current_playback_source = PlaybackSource::SEARCH;
                 
-                start_track_playback(search_results[selection_index].title, search_results[selection_index].url);
+                start_track_playback(search_results[selection_index].title, search_results[selection_index].url, search_results[selection_index].duration, search_query);
                 set_mode(AppMode::PLAYBACK);
             }
             break;
@@ -1205,7 +1259,7 @@ void UI::handle_playlist_view_input(int ch) {
                 is_playing_from_playlist = true;
                 current_playback_source = PlaybackSource::PLAYLIST;
                 
-                start_track_playback(song.title, song.url);
+                start_track_playback(song.title, song.url, song.duration, current_playlist_name);
                 set_mode(AppMode::PLAYBACK);
             }
             break;
@@ -1351,7 +1405,7 @@ void UI::draw_intro() {
     wattroff(main_win, COLOR_PAIR(1) | A_BOLD);
     
 #ifndef VIBE_FI_VERSION
-#define VIBE_FI_VERSION "1.1.1"
+#define VIBE_FI_VERSION "1.1.2"
 #endif
     std::string welcome = std::string("Vibe-Fi Terminal Music Player (v") + VIBE_FI_VERSION + ")";
     int welcome_x = (width - static_cast<int>(welcome.length())) / 2;
@@ -1428,12 +1482,17 @@ void UI::draw_lyrics() {
             }
 
             int line_len = static_cast<int>(line.length());
+            // UTF-8 code point count for visual terminal centering
+            int display_len = 0;
+            for (size_t k = 0; k < line.length(); ++k) {
+                if ((static_cast<unsigned char>(line[k]) & 0xC0) != 0x80) display_len++;
+            }
             if (line_len > lyrics_w) {
                 line = line.substr(0, lyrics_w);
-                line_len = lyrics_w;
+                display_len = lyrics_w;
             }
 
-            int start_x = lyrics_start + std::max(0, (lyrics_w - line_len) / 2);
+            int start_x = lyrics_start + std::max(0, (lyrics_w - display_len) / 2);
 
             if (idx == active_index) {
                 wattron(target_win, A_BOLD | COLOR_PAIR(2));
@@ -1576,7 +1635,7 @@ void UI::handle_queue_input(int ch) {
                 track_retry_count = 0;
                 current_playback_source = PlaybackSource::QUEUE;
                 show_message("Playing: " + song.title);
-                start_track_playback(song.title, song.url);
+                start_track_playback(song.title, song.url, song.duration, is_playing_from_playlist ? playing_playlist_name : "");
                 set_mode(AppMode::PLAYBACK);
             }
             break;
@@ -1610,7 +1669,7 @@ void UI::play_next() {
         queue_index = next_index;
         track_retry_count = 0;
         show_message("Playing: " + song.title);
-        start_track_playback(song.title, song.url);
+        start_track_playback(song.title, song.url, song.duration, is_playing_from_playlist ? playing_playlist_name : "");
     } else {
         queue_index = -1;
         show_message("Reached end of queue.");
@@ -1632,7 +1691,7 @@ void UI::play_previous() {
         queue_index = prev_index;
         track_retry_count = 0;
         show_message("Playing previous: " + song.title);
-        start_track_playback(song.title, song.url);
+        start_track_playback(song.title, song.url, song.duration, is_playing_from_playlist ? playing_playlist_name : "");
     } else {
         player.seek(0);
     }
@@ -1771,7 +1830,7 @@ bool UI::confirm_quit() {
             break;
         } else if (ch == 10) { // Enter -> confirm choice
             break;
-        } else if (ch == 'y' || ch == 'Y') {
+        } else if (ch == 'y' || ch == 'Y' || ch == 'q' || ch == 'Q') {
             selected = 0;
             break;
         } else if (ch == 'n' || ch == 'N') {
@@ -1791,20 +1850,19 @@ bool UI::confirm_quit() {
     return (selected == 0);
 }
 
-void UI::fetch_current_lyrics(std::string title_override, std::string url_override) {
+void UI::fetch_current_lyrics(std::string title_override, std::string url_override, double duration_override, std::string artist_override) {
     (void)url_override;
     std::string title = title_override;
-    if (title.empty()) {
+    if (title.empty() || title == "videoplayback") {
         title = player.get_metadata("media-title");
-        if (title.empty()) title = player.get_metadata("filename");
+        if (title.empty() || title == "videoplayback") title = player.get_metadata("metadata/by-key/title");
+        if (title.empty() || title == "videoplayback") title = player.get_metadata("filename");
     }
     
-    if (title.empty()) {
+    if (title.empty() || title == "videoplayback") {
         current_lyrics_data = {"Song title missing.", {}, false};
         return;
     }
-
-    current_lyrics_title = title;
 
     // Strip trailing file extension if present
     size_t last_dot = title.find_last_of('.');
@@ -1812,38 +1870,129 @@ void UI::fetch_current_lyrics(std::string title_override, std::string url_overri
         title = title.substr(0, last_dot);
     }
     
-    std::string artist;
-    std::string song_title = title;
-    
-    // Check "Artist - Title" format
-    size_t dash_pos = title.find(" - ");
-    if (dash_pos != std::string::npos) {
-        artist = title.substr(0, dash_pos);
-        song_title = title.substr(dash_pos + 3);
-    } else {
-        artist = player.get_metadata("artist");
+    std::string raw_artist = artist_override;
+    if (raw_artist.empty()) raw_artist = player.get_metadata("artist");
+    if (raw_artist.empty()) raw_artist = player.get_metadata("metadata/by-key/artist");
+    if (raw_artist.empty()) raw_artist = player.get_metadata("metadata/by-key/uploader");
+    if (raw_artist.empty()) raw_artist = player.get_metadata("metadata/by-key/channel");
+
+    // If still empty and playing from a playlist, inspect dominant artist in the playlist
+    std::string context_hint = is_playing_from_playlist ? playing_playlist_name : "";
+    if (raw_artist.empty() && is_playing_from_playlist && !current_playlist_songs.empty()) {
+        std::unordered_map<std::string, int> artist_counts;
+        for (const auto& s : current_playlist_songs) {
+            std::string a, t;
+            parse_artist_and_title(s.title, "", a, t);
+            if (!a.empty() && a != "Unknown") {
+                artist_counts[a]++;
+            }
+        }
+        std::string top_artist;
+        int top_count = 0;
+        for (const auto& [art, cnt] : artist_counts) {
+            if (cnt > top_count) {
+                top_count = cnt;
+                top_artist = art;
+            }
+        }
+        if (top_count >= 2) {
+            raw_artist = top_artist;
+        }
     }
+
+    std::string artist, song_title;
+    parse_artist_and_title(title, raw_artist, artist, song_title, context_hint);
 
     if (discord_rpc) {
         discord_rpc->update_presence(song_title, artist);
     }
-    
-    show_message("Fetching lyrics...");
-    wnoutrefresh(help_win);
-    doupdate(); 
-    
-    current_lyrics_data = lyrics_manager.fetch_lyrics(artist, song_title);
+
+    // Check if the current in-memory lyrics already belong to this exact track and are resolved
+    bool is_same_track = (current_lyrics_title == title || (!song_title.empty() && current_lyrics_title == song_title));
+    if (is_same_track && lyrics_resolved_for_current_track &&
+        (current_lyrics_data.has_synced || (!current_lyrics_data.plain_lyrics.empty() && current_lyrics_data.plain_lyrics != "Fetching lyrics..."))) {
+        return;
+    }
+
+    double dur = duration_override;
+    if (dur <= 0.0) dur = player.get_duration();
+
+    // 1. Fast path: load instantly from disk cache (< 0.3ms) without flashing any status messages
+    LyricsData cached_lyrics;
+    if (lyrics_manager.get_cached_lyrics(artist, song_title, cached_lyrics)) {
+        current_lyrics_data = std::move(cached_lyrics);
+        current_lyrics_title = title;
+        current_lyrics_artist = artist;
+        lyrics_scroll_offset = 0;
+        lyrics_auto_scroll = true;
+        lyrics_resolved_for_current_track = true;
+        return;
+    }
+
+    // 2. Slow path (cache miss): immediately clear previous song's lyrics so they NEVER leak into new song!
+    current_lyrics_title = title;
+    current_lyrics_artist = artist;
+    current_lyrics_data = {"Fetching lyrics...", {}, false};
     lyrics_scroll_offset = 0;
     lyrics_auto_scroll = true;
+    lyrics_resolved_for_current_track = false;
+    show_message("Fetching lyrics...");
+
+    if (!lyrics_state) return;
+    uint64_t req_id = ++lyrics_state->request_id;
+    auto state = lyrics_state;
+    std::thread([state, req_id, artist, song_title, dur, title]() {
+        LyricsManager lm;
+        LyricsData data = lm.fetch_lyrics(artist, song_title, dur);
+        if (!state->ui_alive.load()) return;
+        std::lock_guard<std::mutex> lock(state->mutex);
+        if (state->ui_alive.load() && req_id == state->request_id.load()) {
+            state->pending_result = {req_id, title, artist, std::move(data), true};
+        }
+    }).detach();
 }
 
-void UI::start_track_playback(const std::string& title, const std::string& url) {
+void UI::start_track_playback(const std::string& title, const std::string& url, const std::string& duration_str, const std::string& artist_hint) {
     try {
+        visualizer.reset();
         last_played_path = url;
+        lyrics_resolved_for_current_track = false;
+
+        std::string display_title = title;
+        std::string inferred_artist = artist_hint;
+
+        if (display_title.find(" - ") == std::string::npos) {
+            // Check dominant artist in current playlist
+            if (inferred_artist.empty() && is_playing_from_playlist && !current_playlist_songs.empty()) {
+                std::unordered_map<std::string, int> artist_counts;
+                for (const auto& s : current_playlist_songs) {
+                    std::string a, t;
+                    parse_artist_and_title(s.title, "", a, t);
+                    if (!a.empty() && a != "Unknown") artist_counts[a]++;
+                }
+                std::string top_artist;
+                int top_cnt = 0;
+                for (const auto& [art, cnt] : artist_counts) {
+                    if (cnt > top_cnt) { top_cnt = cnt; top_artist = art; }
+                }
+                if (top_cnt >= 2) inferred_artist = top_artist;
+            }
+            if (!inferred_artist.empty() && inferred_artist != "Favorites" && inferred_artist != "Queue") {
+                std::string a, t;
+                parse_artist_and_title(display_title, inferred_artist, a, t, inferred_artist);
+                if (!a.empty() && a != "Unknown") {
+                    display_title = a + " - " + t;
+                    inferred_artist = a;
+                }
+            }
+        }
+
         player.load(url);
-        player.set_property("force-media-title", title);
+        player.set_property("force-media-title", display_title);
         player.play();
-        fetch_current_lyrics(title, url);
+
+        double dur = parse_duration_to_seconds(duration_str);
+        fetch_current_lyrics(display_title, url, dur, inferred_artist);
     } catch (const std::exception& e) {
         show_message(std::string("Playback error: ") + e.what());
     }
@@ -2022,6 +2171,7 @@ void UI::load_state() {
         doupdate();
 
         // Restore playlist context and recover track title if not explicitly stored
+        std::string dur_str;
         if (!playlist.empty()) {
             current_playlist_name = playlist;
             playing_playlist_name = playlist;
@@ -2033,6 +2183,7 @@ void UI::load_state() {
                 if (saved_title.empty()) {
                     saved_title = play_queue[index].title;
                 }
+                dur_str = play_queue[index].duration;
             }
         } else {
             is_playing_from_playlist = false;
@@ -2049,9 +2200,11 @@ void UI::load_state() {
         player.set_volume(volume);
         last_played_path = path;
         queue_index = index;
+        lyrics_resolved_for_current_track = false;
 
         if (!saved_title.empty()) {
-            fetch_current_lyrics(saved_title, path);
+            double dur = parse_duration_to_seconds(dur_str);
+            fetch_current_lyrics(saved_title, path, dur, playlist);
         } else {
             current_lyrics_title.clear();
             current_lyrics_data = {"Fetching lyrics...", {}, false};

@@ -61,45 +61,79 @@ void Player::load(const std::string& path, const std::string& mode) {
 }
 
 void Player::play() {
+    if (!mpv) return;
     int flag = 0;
-    check_error(mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &flag));
+    int ret = mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &flag);
+    if (ret < 0) last_error_str = mpv_error_string(ret);
 }
 
 void Player::pause() {
+    if (!mpv) return;
     int flag = 1;
-    check_error(mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &flag));
+    int ret = mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &flag);
+    if (ret < 0) last_error_str = mpv_error_string(ret);
 }
 
 void Player::toggle_pause() {
+    if (!mpv) return;
     int flag = 0;
     if (mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &flag) >= 0) {
         flag = !flag;
-        check_error(mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &flag));
+        int ret = mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &flag);
+        if (ret < 0) last_error_str = mpv_error_string(ret);
     }
 }
 
 void Player::stop() {
     clear_playback_flags();
+    if (!mpv) return;
     const char* cmd[] = {"stop", nullptr};
-    check_error(mpv_command(mpv, cmd));
+    int ret = mpv_command(mpv, cmd);
+    if (ret < 0) last_error_str = mpv_error_string(ret);
 }
 
-bool Player::is_playing() {
+bool Player::is_buffering() {
+    if (!mpv) return false;
     int flag = 0;
-    if (mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &flag) < 0) return false;
-    return !flag;
+    if (mpv_get_property(mpv, "paused-for-cache", MPV_FORMAT_FLAG, &flag) >= 0 && flag) {
+        return true;
+    }
+    return false;
 }
 
-bool Player::is_paused() {
-    int flag = 0;
-    if (mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &flag) < 0) return false;
-    return flag;
+bool Player::is_loading() {
+    if (!mpv) return false;
+    if (loading_active) return true;
+    if (!is_idle() && !is_paused()) {
+        double pos = 0.0;
+        if (mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &pos) < 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool Player::is_idle() {
+    if (!mpv) return true;
     int flag = 1;
     if (mpv_get_property(mpv, "idle-active", MPV_FORMAT_FLAG, &flag) < 0) return true;
-    return flag;
+    return flag != 0;
+}
+
+bool Player::is_paused() {
+    if (!mpv) return false;
+    if (is_idle()) return false;
+    int flag = 0;
+    if (mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &flag) < 0) return false;
+    return flag != 0;
+}
+
+bool Player::is_playing() {
+    if (!mpv) return false;
+    if (is_idle() || is_paused() || is_loading() || is_buffering()) return false;
+    double pos = 0.0;
+    if (mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &pos) < 0) return false;
+    return true;
 }
 
 double Player::get_position() {
@@ -121,16 +155,20 @@ int Player::get_volume() {
 }
 
 void Player::set_volume(int volume) {
+    if (!mpv) return;
     if (volume < 0) volume = 0;
     if (volume > 150) volume = 150;
     double vol = static_cast<double>(volume);
-    check_error(mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol));
+    int ret = mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &vol);
+    if (ret < 0) last_error_str = mpv_error_string(ret);
 }
 
 void Player::seek(double seconds) {
+    if (!mpv) return;
     std::string seconds_str = std::to_string(seconds);
     const char* cmd[] = {"seek", seconds_str.c_str(), "relative", nullptr};
-    check_error(mpv_command(mpv, cmd));
+    int ret = mpv_command(mpv, cmd);
+    if (ret < 0) last_error_str = mpv_error_string(ret);
 }
 
 std::string Player::get_metadata(const std::string& key) {

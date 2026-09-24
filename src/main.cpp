@@ -12,7 +12,7 @@
 namespace fs = std::filesystem;
 
 #ifndef VIBE_FI_VERSION
-#define VIBE_FI_VERSION "1.1.1"
+#define VIBE_FI_VERSION "1.1.2"
 #endif
 
 static void print_help(const char* prog_name) {
@@ -22,8 +22,9 @@ static void print_help(const char* prog_name) {
               << "  " << prog_name << " <url>                Stream YouTube audio directly\n"
               << "  " << prog_name << " <file>               Play local audio file\n"
               << "  " << prog_name << " <search query>       Search and play track from YouTube\n"
+              << "  " << prog_name << " --bottle | -b         Show isolated bottle dependency status\n"
               << "  " << prog_name << " --update | -u        Check and apply latest updates\n"
-              << "  " << prog_name << " --uninstall          Uninstall Vibe-Fi from your system\n"
+              << "  " << prog_name << " --uninstall          Uninstall Vibe-Fi and bottle dependencies\n"
               << "  " << prog_name << " --no-update          Skip startup update check\n"
               << "  " << prog_name << " --help | -h          Show this help message\n"
               << "  " << prog_name << " --version | -v       Show version information\n\n"
@@ -47,7 +48,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> startup_errors;
     std::vector<SearchResult> initial_queue;
 
-    // Check for help, version, update, or uninstall flags
+    // Check for help, version, update, uninstall, or bottle flags
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -56,6 +57,10 @@ int main(int argc, char* argv[]) {
         }
         if (arg == "--version" || arg == "-v") {
             std::cout << "Vibe-Fi version " << VIBE_FI_VERSION << " (C++17, libmpv, ncurses)\n";
+            return 0;
+        }
+        if (arg == "--bottle" || arg == "-b") {
+            print_bottle_status();
             return 0;
         }
         if (arg == "--update" || arg == "-u") {
@@ -93,6 +98,7 @@ int main(int argc, char* argv[]) {
 
         for (const auto& input : playback_inputs) {
             std::string url_to_play = input;
+            std::string stream_title;
 
             if (is_url(input)) {
                 if (!is_online()) {
@@ -100,16 +106,27 @@ int main(int argc, char* argv[]) {
                     startup_errors.push_back("Internet connection required to stream URL.");
                     continue;
                 }
-                std::cout << "Resolving stream URL: " << input << "..." << std::endl;
+                std::cout << "Resolving stream: " << input << "..." << std::endl;
+                StreamInfo info;
                 try {
-                    url_to_play = get_youtube_stream_url(input);
+                    info = resolve_stream_info(input);
+                    url_to_play = info.stream_url;
                 } catch (const std::exception& e) {
                     startup_errors.push_back("Failed to resolve URL: " + input);
                     continue;
                 }
+
+                stream_title = info.title;
+                if (!info.artist.empty() && stream_title.find(" - ") == std::string::npos) {
+                    stream_title = info.artist + " - " + stream_title;
+                }
+                if (stream_title.empty()) stream_title = input;
+                initial_queue.push_back({stream_title, url_to_play, format_duration(info.duration)});
             } else if (fs::exists(input)) {
                 // Local file exists
                 url_to_play = fs::absolute(input).string();
+                stream_title = fs::path(url_to_play).stem().string();
+                initial_queue.push_back({stream_title, url_to_play, ""});
             } else {
                 // Treat non-file input as YouTube search query
                 if (!is_online()) {
@@ -122,6 +139,7 @@ int main(int argc, char* argv[]) {
                 if (!search_hits.empty()) {
                     url_to_play = search_hits.front().url;
                     initial_queue = search_hits;
+                    stream_title = search_hits.front().title;
                 } else {
                     startup_errors.push_back("No results for: " + input);
                     continue;
@@ -131,6 +149,9 @@ int main(int argc, char* argv[]) {
             try {
                 if (!start_playback) {
                     player.load(url_to_play, "replace");
+                    if (!stream_title.empty()) {
+                        player.set_property("force-media-title", stream_title);
+                    }
                     start_playback = true;
                 } else {
                     player.load(url_to_play, "append-play");
@@ -155,8 +176,13 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        for (const auto& err : startup_errors) {
-            ui.show_message(err);
+        if (!startup_errors.empty()) {
+            std::string combined;
+            for (size_t i = 0; i < startup_errors.size(); ++i) {
+                if (i > 0) combined += " | ";
+                combined += startup_errors[i];
+            }
+            ui.show_message(combined);
         }
 
         ui.run();

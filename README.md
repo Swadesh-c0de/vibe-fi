@@ -10,12 +10,12 @@
 <br><br>
 
 <p align="center">
-  <strong>The lightweight, aesthetic terminal music player built for people who live in the terminal.</strong><br>
-  <em>Stream directly from YouTube, play lossless local albums, enjoy reactive visualizers, and follow synced lyrics — zero browser tabs needed.</em>
+  <strong>A fast, lightweight music player for your terminal.</strong><br>
+  <em>Stream YouTube audio, play local music files, watch real-time visualizers, and read synced lyrics — without opening a browser.</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Swadesh-c0de/vibe-fi/releases/tag/v1.1.1"><img src="https://img.shields.io/github/v/release/Swadesh-c0de/vibe-fi.svg?style=flat-square&color=6366f1" alt="Release" /></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-38bdf8.svg?style=flat-square" alt="License" /></a> <img src="https://img.shields.io/badge/c%2B%2B-17-ec4899.svg?style=flat-square&logo=c%2B%2B&logoColor=white" alt="C++17" /> <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos-10b981.svg?style=flat-square" alt="Platform" /> <a href="https://github.com/Swadesh-c0de/vibe-fi/stargazers"><img src="https://img.shields.io/github/stars/Swadesh-c0de/vibe-fi?style=flat-square&color=eab308" alt="GitHub Stars" /></a> <a href="https://github.com/Swadesh-c0de/vibe-fi/pulls"><img src="https://img.shields.io/badge/PRs-welcome-a855f7.svg?style=flat-square" alt="PRs Welcome" /></a>
+  <a href="https://github.com/Swadesh-c0de/vibe-fi/releases/tag/v1.1.2"><img src="https://img.shields.io/github/v/release/Swadesh-c0de/vibe-fi.svg?style=flat-square&color=6366f1" alt="Release" /></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-38bdf8.svg?style=flat-square" alt="License" /></a> <img src="https://img.shields.io/badge/c%2B%2B-17-ec4899.svg?style=flat-square&logo=c%2B%2B&logoColor=white" alt="C++17" /> <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos-10b981.svg?style=flat-square" alt="Platform" /> <a href="https://github.com/Swadesh-c0de/vibe-fi/stargazers"><img src="https://img.shields.io/github/stars/Swadesh-c0de/vibe-fi?style=flat-square&color=eab308" alt="GitHub Stars" /></a> <a href="https://github.com/Swadesh-c0de/vibe-fi/pulls"><img src="https://img.shields.io/badge/PRs-welcome-a855f7.svg?style=flat-square" alt="PRs Welcome" /></a>
 </p>
 
 <br><br>
@@ -43,7 +43,7 @@
 - [Comparison](#comparison)
 - [Installation](#installation)
   - [Automated Script (Recommended)](#automated-script-recommended)
-  - [GitHub Releases (v1.1.1)](#github-releases-v111)
+  - [GitHub Releases (v1.1.2)](#github-releases-v112)
   - [Building from Source](#building-from-source)
 - [Usage & Workflow](#usage--workflow)
   - [CLI Commands & Search](#cli-commands--search)
@@ -66,55 +66,58 @@
 
 ## Why Vibe-Fi?
 
-We've all been there:
+Most desktop music players come with trade-offs:
+- **Browser & Electron apps (Spotify, YouTube web)** consume hundreds of megabytes of RAM and use noticeable CPU in the background.
+- **Traditional command-line players (`cmus`, `mpd`)** are lightweight, but require complex configuration files and external scripts just to stream a song from YouTube or show synced lyrics.
 
-You're completely locked in. Neovim is open, your terminal multiplexer is humming, code is flowing, and you just want some tunes in the background.
-
-Your options usually kind of suck:
-
-- **Open Spotify or a YouTube tab**: Say goodbye to 2 GB of RAM, listen to your laptop fans scream like a jet engine just to stream background audio, and break your keyboard flow every time you need to skip a track.
-- **Use classic CLI players**: `cmus` and `mpd` are legendary, but setting up background daemons, configuring audio outputs, or wrestling shell scripts just to stream a YouTube track is a whole weekend project. And good luck getting live synced karaoke lyrics or aesthetic visualizers out of the box.
-
-**Vibe-Fi** is built to bridge that gap.
-
-Written in clean C++17, Vibe-Fi pairs the audio horsepower of `libmpv` with a lightweight, double-buffered `ncurses` interface. You get instant streaming via `yt-dlp`, local lossless folder crawling, real-time physics visualizers, live scrolling lyrics, native desktop media keys via MPRIS, and dotfile-friendly plaintext state — all in a single binary that starts in milliseconds and sips under 35 MB of RAM.
+**Vibe-Fi brings everything together in one simple tool:**
+- **Zero-Configuration YouTube Streaming**: Search and stream audio instantly via `yt-dlp`.
+- **Fast and Lightweight**: Built with C++17, `libmpv`, and `ncurses`. Starts in milliseconds and runs smoothly using under 35 MB of RAM.
+- **Audio Visualizers & Live Lyrics**: Built-in visualizers that respond directly to the audio, plus automatically synced lyrics from `lrclib.net`.
+- **Clean System Footprint**: Installs missing standalone tools into an isolated user folder (`~/.vibe-fi/bottle/`) and uninstalls cleanly without leaving junk behind.
 
 ---
 
 ## Features
 
 ### Direct YouTube Streaming
-Just type `vibe "song query"` or hit <kbd>S</kbd> inside the app. Audio streams resolve and pipe directly through `yt-dlp` into `libmpv`. Automatic stream recovery ensures smooth, uninterrupted playback even on unstable connections. No video decoding, no GPU drain, no browser tabs, no ads. You can also paste raw YouTube URLs on the fly (<kbd>U</kbd>) to stream live sets, mixes, or podcasts.
+Search for any song with `vibe "song title"` or press <kbd>S</kbd> inside the player. You can also paste direct YouTube links with <kbd>U</kbd>. Vibe-Fi streams audio directly without decoding video, saving CPU and bandwidth.
 
-### Lossless Local Audio Crawler
-Hit <kbd>L</kbd> to browse your local music collection. It handles `.flac`, `.mp3`, `.wav`, `.m4a`, `.ogg`, `.opus`, `.aac`, `.alac`, `.aiff`, and `.webm`. Song durations are cached in memory so folder hopping feels instant. Add any highlighted track to a playlist with <kbd>A</kbd>.
+### Local Audio Library
+Press <kbd>L</kbd> to browse and play audio files from your computer. Supports `.flac`, `.mp3`, `.wav`, `.m4a`, `.ogg`, `.opus`, `.aac`, `.alac`, `.aiff`, and `.webm`. Track durations are cached for fast navigation, and you can add any song to a playlist with <kbd>A</kbd>.
 
-### Physics-Driven Audio Visualizers
-Real-time audio telemetry extracted directly from FFmpeg's `@astats` filter — measuring RMS loudness, peak spikes, and zero-crossing pitch dynamics:
-- **Cava Wave** *(Default)*: CAVA-style continuous fluid spectrum with Monstercat neighbor smoothing, parabolic gravity ballistics, and multi-tier dynamic theme gradients.
-- **Neon Flame**: A dual-mirrored frequency volcano erupting from the center with floating peak gravity caps (`▔`) and real-time metronome tracking.
-- **Stereo Bars**: Classic graphic equalizer with left/right channel separation and natural decay physics.
+### Real-Time Audio Visualizers
+Visualizers driven by real-time audio statistics (volume, peak levels, and pitch dynamics):
+- **Cava Wave** *(Default)*: Smooth, fluid wave spectrum with continuous frequency balancing.
+- **Neon Flame**: Mirrored equalizer bars with floating peak caps (`▔`) and beat metronome.
+- **Stereo Bars**: Classic left and right channel equalizer spectrum.
 
-Cycle between them anytime with <kbd>V</kbd>.
+Press <kbd>V</kbd> to cycle between visualizer modes at any time.
 
-### Synchronized LRC Lyrics
-Automatic background lookups against `lrclib.net` matching the active track and artist. Lines highlight and smoothly auto-scroll in real time with the audio. Fetched lyrics are cached offline in `~/.vibe-fi/cache/lyrics/` so they work forever without internet. Want to read ahead? Just scroll manually with <kbd>↑</kbd> / <kbd>↓</kbd>.
+### Synchronized Lyrics
+Automatically searches `lrclib.net` for lyrics matching the active song and scrolls them line-by-line with the music. Lyrics are cached locally in `~/.vibe-fi/cache/lyrics/` so they work offline. You can also scroll manually with <kbd>↑</kbd> and <kbd>↓</kbd>.
 
-### Desktop Media Keys & MPRIS
-Native Linux D-Bus service (`org.mpris.MediaPlayer2`). Play, pause, and skip using your hardware keyboard keys, `playerctl`, Waybar, Polybar, or whatever desktop bar you're rocking.
+### Desktop Media Keys (Linux MPRIS)
+Control playback using your keyboard media keys, desktop bar widgets (Waybar, Polybar), or `playerctl` through native Linux D-Bus integration.
 
 ### Discord Rich Presence
-Show off what you're listening to on your Discord profile through raw Unix domain sockets (`discord-ipc-0`). No bloated Node.js tools, Electron daemons, or bridge scripts required.
+Displays your current song and artist on your Discord profile using a direct, lightweight Unix socket connection.
 
-### Dotfile-Friendly Playlists & State Memory
-Create, rename, reorder, and move songs across playlists (<kbd>P</kbd>), or export any list to standard `.m3u` (<kbd>E</kbd>). Closed your terminal? Hit <kbd>R</kbd> at launch to restore your exact track position and volume from `~/.vibe-fi/state.ini`. Your active theme and visualizer modes are also remembered automatically across launches.
+### Playlists & Session Memory
+Create, edit, and organize playlists (<kbd>P</kbd>), or export them to `.m3u` files (<kbd>E</kbd>). If you close the terminal, press <kbd>R</kbd> on launch to restore your last track, seek position, and volume. Your active theme and visualizer mode are remembered automatically.
 
-### Curated Color Themes
-Press <kbd>T</kbd> to cycle between four themes crafted to look great in native terminal environments (your last used theme is saved and restored automatically on next launch):
+### Clean Color Themes
+Press <kbd>T</kbd> to cycle through four curated terminal themes:
 - **Midnight**: Deep indigo borders, electric cyan spectrum, magenta highlights.
-- **Matrix**: Phosphor green monochrome hacker aesthetic.
-- **Nord**: Arctic cyan borders, clean frost-white levels, cool blue accents.
-- **HyDE**: Velvet magenta borders, violet and lavender wave spectrum, vivid cyan highlights.
+- **Matrix**: Clean green hacker aesthetic.
+- **Nord**: Cool blue and frost-white palette.
+- **HyDE**: Velvet magenta, violet wave, and cyan highlights.
+
+### Isolated Dependency Bottle & Clean Uninstaller
+Vibe-Fi is built to keep your operating system tidy:
+- **Bottle Isolation (`~/.vibe-fi/bottle/`)**: Missing standalone tools (like `yt-dlp`) are downloaded into an isolated user folder without needing root or `sudo`.
+- **Dependency Guard**: When you run `vibe --uninstall` or `./uninstall.sh`, Vibe-Fi cleans its bottle directory and checks whether other apps need installed libraries before removing them.
+- **Status Check**: Run `vibe --bottle` anytime to inspect active bottle dependencies and system tracking.
 
 ---
 
@@ -137,7 +140,7 @@ Press <kbd>T</kbd> to cycle between four themes crafted to look great in native 
 
 ### Automated Script (Recommended)
 
-Got a minute? Grab the automated installer. It automatically detects your operating system, pulls all required native development libraries, compiles the binary with optimization flags, and installs `vibe`:
+The automated script detects your operating system, installs missing dependencies, compiles the project, and installs `vibe`:
 
 ```bash
 git clone https://github.com/Swadesh-c0de/vibe-fi.git
@@ -146,21 +149,19 @@ chmod +x install.sh
 ./install.sh
 ```
 
-If you want to inspect the script first, take a look: [install.sh](./install.sh)
-
-> Supported distributions: **Arch Linux**, **Ubuntu / Debian**, **Fedora / RHEL**, **openSUSE**, and **macOS** (Homebrew).
+> Supported systems: **Arch Linux**, **Ubuntu / Debian**, **Fedora / RHEL**, **openSUSE**, and **macOS** (Homebrew).
 
 ---
 
-### GitHub Releases (v1.1.1)
+### GitHub Releases (v1.1.2)
 
-If you prefer downloading tagged release archives directly rather than cloning the main git branch, grab the release bundle from the [v1.1.1 Release Page](https://github.com/Swadesh-c0de/vibe-fi/releases/tag/v1.1.1):
+You can also download and run a release archive directly from the [v1.1.2 Release Page](https://github.com/Swadesh-c0de/vibe-fi/releases/tag/v1.1.2):
 
 ```bash
-# Download and extract the v1.1.1 release archive
-curl -LO https://github.com/Swadesh-c0de/vibe-fi/archive/refs/tags/v1.1.1.tar.gz
-tar -xzf v1.1.1.tar.gz
-cd vibe-fi-1.1.1
+# Download and extract the v1.1.2 release archive
+curl -LO https://github.com/Swadesh-c0de/vibe-fi/archive/refs/tags/v1.1.2.tar.gz
+tar -xzf v1.1.2.tar.gz
+cd vibe-fi-1.1.2
 chmod +x install.sh
 ./install.sh
 ```
@@ -169,7 +170,7 @@ chmod +x install.sh
 
 ### Building from Source
 
-Prefer doing it manually with CMake? Here is the rundown:
+If you prefer to install dependencies and compile manually using CMake:
 
 #### 1. System Dependencies
 
@@ -242,33 +243,34 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### CLI Commands & Search
 
-Launch the interactive player or trigger audio straight from your terminal prompt:
+Launch the player or start playing tracks directly from your command line:
 
 ```bash
-# Launch interactive TUI player
+# Launch the interactive player
 vibe
 
-# Search YouTube and play top match directly (fills queue with related tracks)
+# Search and play a track from YouTube
 vibe "miles davis so what"
 vibe "lofi hip hop radio"
 
-# Stream direct audio from a YouTube link
+# Stream audio directly from a YouTube URL
 vibe "https://www.youtube.com/watch?v=5qap5aO4i9A"
 
-# Play a local audio file or album
-vibe ~/Music/Daft_Punk/Random_Access_Memories.flac
+# Play a local audio file
+vibe ~/Music/song.flac
 
-# Flags
-vibe --update      # Check for and install latest updates
-vibe --uninstall   # Uninstall Vibe-Fi binaries and setup
-vibe --no-update   # Skip automatic startup update check
+# Useful Flags
+vibe --bottle      # Check isolated bottle dependencies and status
+vibe --update      # Check for and apply latest updates
+vibe --uninstall   # Uninstall Vibe-Fi and clean dependencies
+vibe --no-update   # Launch without checking for updates
 vibe --version     # Display version information
 vibe --help        # Display usage guide
 ```
 
 ### Window Manager Setup
 
-If you run a tiling window manager (Hyprland, i3, Sway, or bspwm), map a keybinding to open Vibe-Fi in a dedicated floating scratchpad:
+If you use a window manager (such as Hyprland, i3, Sway, or bspwm), you can bind a key to open Vibe-Fi in a floating scratchpad window:
 
 ```ini
 # Example for Hyprland (~/.config/hypr/hyprland.conf)
@@ -279,19 +281,23 @@ windowrulev2 = size 1000 620, class:^(music-player)$
 
 ### Uninstallation
 
-You can easily uninstall Vibe-Fi at any time using either method:
+You can cleanly uninstall Vibe-Fi at any time using either command:
 
 **From anywhere in your terminal:**
 ```bash
 vibe --uninstall
 ```
 
-**Or from the repository directory:**
+**Or from the repository folder:**
 ```bash
 ./uninstall.sh
 ```
 
-Both methods safely prompt for confirmation before deleting binaries, and ask whether you want to preserve or delete your playlists and configurations (`~/.vibe-fi`).
+Both methods provide a safe, complete uninstallation:
+1. **Binary Removal**: Removes installed `vibe` binaries from system folders.
+2. **Bottle Cleanup**: Deletes the isolated bottle directory (`~/.vibe-fi/bottle/`).
+3. **Dependency Guard**: Checks whether other installed applications rely on tracked packages before prompting (`[y/N]`) to remove unused ones.
+4. **Data Preservation**: Prompts whether you want to keep or delete your playlists and settings (`~/.vibe-fi`).
 
 ---
 
@@ -307,47 +313,47 @@ Both methods safely prompt for confirmation before deleting binaries, and ask wh
 ## Hotkeys
 
 > [!TIP]
-> Vibe-Fi supports classic Vim navigation (<kbd>j</kbd> / <kbd>k</kbd> / <kbd>h</kbd>) as well as standard arrow keys across all menus and lists.
+> You can navigate menus using standard arrow keys or Vim keys (<kbd>j</kbd> / <kbd>k</kbd> / <kbd>h</kbd>).
 
 ### Global Navigation
 
 | Key | Action |
 | :---: | :--- |
-| <kbd>ESC</kbd> | Back / Dismiss modal / Exit |
+| <kbd>ESC</kbd> | Back / Close modal / Exit |
 | <kbd>↑</kbd> / <kbd>k</kbd> | Move selection up |
 | <kbd>↓</kbd> / <kbd>j</kbd> | Move selection down |
-| <kbd>ENTER</kbd> | Play track / Open directory / Confirm action |
+| <kbd>ENTER</kbd> | Play track / Open folder / Confirm |
 
 ### Playback Screen
 
 | Key | Action |
 | :---: | :--- |
-| <kbd>SPACE</kbd> | Toggle Play / Pause |
-| <kbd>N</kbd> / <kbd>></kbd> | Next track in queue |
-| <kbd>B</kbd> / <kbd><</kbd> | Previous track in queue |
+| <kbd>SPACE</kbd> | Play / Pause toggle |
+| <kbd>N</kbd> / <kbd>></kbd> | Next track |
+| <kbd>B</kbd> / <kbd><</kbd> | Previous track |
 | <kbd>←</kbd> / <kbd>→</kbd> | Seek backward / forward 5 seconds |
-| <kbd>+</kbd> / <kbd>-</kbd> | Volume Up / Down |
-| <kbd>S</kbd> | Open YouTube search dialog |
+| <kbd>+</kbd> / <kbd>-</kbd> | Volume up / down |
+| <kbd>S</kbd> | Search YouTube |
 | <kbd>L</kbd> | Open local music library |
-| <kbd>P</kbd> | Browse custom playlists |
+| <kbd>P</kbd> | Open playlists |
 | <kbd>C</kbd> | View current play queue |
-| <kbd>U</kbd> | Input direct YouTube URL to stream |
-| <kbd>V</kbd> | Cycle visualizer (`Cava Wave` &rarr; `Neon Flame` &rarr; `Stereo Bars`) |
-| <kbd>T</kbd> | Cycle theme (`Midnight` &rarr; `Matrix` &rarr; `Nord` &rarr; `HyDE`) |
-| <kbd>O</kbd> | Toggle Autoplay (`ON` / `OFF`) |
-| <kbd>R</kbd> | Replay track (or restore session from launch screen) |
-| <kbd>Q</kbd> | Jump to active playlist or search result queue |
+| <kbd>U</kbd> | Paste YouTube URL to play |
+| <kbd>V</kbd> | Switch visualizer (`Cava Wave` &rarr; `Neon Flame` &rarr; `Stereo Bars`) |
+| <kbd>T</kbd> | Switch theme (`Midnight` &rarr; `Matrix` &rarr; `Nord` &rarr; `HyDE`) |
+| <kbd>O</kbd> | Toggle autoplay (`ON` / `OFF`) |
+| <kbd>R</kbd> | Replay track (or restore session from home screen) |
+| <kbd>Q</kbd> | Jump to active playlist or search queue |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Scroll synced lyrics manually |
-| <kbd>ESC</kbd> | Quit (with confirmation prompt) |
+| <kbd>ESC</kbd> | Exit player (prompts confirmation) |
 
 ### Library & Playlists
 
 | View | Key | Action |
 | :--- | :---: | :--- |
-| **Library Browser** | <kbd>ENTER</kbd> | Play track / Open directory |
+| **Library Browser** | <kbd>ENTER</kbd> | Play track / Open folder |
 | | <kbd>BKSP</kbd> / <kbd>h</kbd> | Go up one directory |
-| | <kbd>A</kbd> | Add highlighted track to playlist |
-| **Playlists Overview** | <kbd>ENTER</kbd> | Inspect playlist tracks |
+| | <kbd>A</kbd> | Add selected track to playlist |
+| **Playlists Overview** | <kbd>ENTER</kbd> | Open selected playlist |
 | | <kbd>N</kbd> | Create new playlist |
 | | <kbd>R</kbd> | Rename playlist |
 | | <kbd>D</kbd> | Delete playlist |
@@ -355,7 +361,7 @@ Both methods safely prompt for confirmation before deleting binaries, and ask wh
 | **Playlist Editor** | <kbd>ENTER</kbd> | Play track immediately |
 | | <kbd>D</kbd> | Remove track from playlist |
 | | <kbd>M</kbd> | Move track to another playlist |
-| **Play Queue** | <kbd>ENTER</kbd> | Jump to track in queue |
+| **Play Queue** | <kbd>ENTER</kbd> | Play selected track from queue |
 | | <kbd>D</kbd> | Remove track from queue |
 
 ---
@@ -373,29 +379,33 @@ Both methods safely prompt for confirmation before deleting binaries, and ask wh
 
 ### Visualizers (<kbd>V</kbd>)
 
-1. **Cava Wave** *(Default)*: CAVA-style continuous fluid spectrum with Monstercat neighbor smoothing, parabolic gravity ballistics, and multi-tier dynamic theme gradients.
-2. **Neon Flame**: Center-erupting frequency volcano with dancing columns, floating gravity peak caps (`▔`), and rhythmic metronome tracking.
-3. **Stereo Bars**: Classic graphic equalizer with left/right channel balance.
+1. **Cava Wave** *(Default)*: Smooth, continuous wave spectrum with fluid frequency balancing.
+2. **Neon Flame**: Mirrored equalizer columns with floating peak markers and metronome indicator.
+3. **Stereo Bars**: Classic graphic equalizer showing left and right audio channels.
 
 ---
 
 ## Configuration & Dotfiles
 
-No hidden binary databases or opaque files. Everything is kept readable and version-controllable under `~/.vibe-fi/`:
+All user data and settings are stored as human-readable plain text files in `~/.vibe-fi/`:
 
 ```
 ~/.vibe-fi/
-├── state.ini                   # Saved session: track URL, seek pos, volume, playlist, active theme
-├── playlists/                  # Plaintext playlist files (Title|URL|Duration)
+├── state.ini                   # Saved session: last track, seek position, volume, theme
+├── playlists/                  # Plain text playlists (Title|URL|Duration)
 │   ├── Chill.txt
 │   ├── Synthwave.txt
 │   └── Favorites.txt
+├── bottle/                     # Isolated dependency environment
+│   ├── manifest.json           # Tracked packages and dependencies
+│   ├── env.sh                  # Shell PATH export script
+│   └── bin/                    # Bottled standalone binaries (e.g. yt-dlp)
 └── cache/
-    └── lyrics/                 # Cached JSON and LRC responses from lrclib.net
+    └── lyrics/                 # Cached lyrics from lrclib.net
         └── Daft+Punk_Get+Lucky.json
 ```
 
-Because playlists are saved as clean, line-delimited `Title|URL|Duration` text files, you can easily track them in your dotfiles git repository, share them with friends, or edit them with `nvim` and `sed`.
+Because playlists and settings are saved as simple text files, you can easily track them in your dotfiles, share them with friends, or edit them with any text editor.
 
 ---
 
@@ -443,11 +453,12 @@ Vibe-Fi is built with decoupled, modular domains:
 
 ## Notes & Invariants
 
-If you're hacking on the codebase or planning to submit a PR, keep these in mind:
+If you are modifying the code or contributing:
 
-- **Decimal Locale Requirement**: `libmpv` relies internally on `strtod` for decimal timestamp parsing. We enforce `LC_NUMERIC="C"` across all locales so European decimal commas don't cause crashes or seek errors.
-- **Node Memory Cleanup**: Audio analysis nodes are cleanly released on every single frame via `mpv_free_node_contents` to prevent memory leaks during long playback sessions.
-- **Double Buffering**: Terminal rendering uses `werase` and `wnoutrefresh` across all sub-windows, executing a single `doupdate` per frame (30 FPS) to eliminate curses flicker.
+- **Locale Setting**: We explicitly keep `LC_NUMERIC="C"` so `libmpv` parses decimal timestamps reliably across all international locales.
+- **Memory Management**: Audio analysis nodes are cleanly released on every frame (`mpv_free_node_contents`) to prevent memory leaks during long playback sessions.
+- **Smooth Rendering**: Terminal drawing uses curses double-buffering (`werase` + `wnoutrefresh` + single `doupdate` per frame at 30 FPS) to prevent screen flickering.
+- **Bottle Tool Discovery**: Standalone tools (such as `yt-dlp`) are resolved first from `~/.vibe-fi/bottle/bin/` so users can run without root permissions.
 
 ---
 
@@ -457,7 +468,7 @@ If you're hacking on the codebase or planning to submit a PR, keep these in mind
 <summary><b>1. YouTube streaming errors or 403 Forbidden</b></summary>
 <br>
 
-YouTube frequently updates its stream decipher signatures. Updating `yt-dlp` to the latest release fixes this 99% of the time:
+YouTube regularly updates its streaming formats. Updating `yt-dlp` to the latest version usually resolves streaming issues immediately:
 
 ```bash
 # Arch Linux
@@ -475,7 +486,7 @@ yt-dlp --version
 <summary><b>2. Media keys not responding</b></summary>
 <br>
 
-Verify that the MPRIS D-Bus interface is registered on your session bus:
+Check if `playerctl` detects Vibe-Fi on your system:
 
 ```bash
 playerctl -l
@@ -485,23 +496,23 @@ playerctl -l
 playerctl --player=vibe_fi play-pause
 playerctl --player=vibe_fi next
 ```
-Ensure `libdbus-1-dev` was installed when building on Linux.
+Make sure `libdbus-1-dev` was installed when compiling on Linux.
 </details>
 
 <details>
 <summary><b>3. Discord Rich Presence not displaying</b></summary>
 <br>
 
-1. Ensure the Discord desktop client is open and running.
-2. In Discord Settings: **Activity Privacy** &rarr; turn ON **"Display current activity as a status message"**.
-3. Verify `$XDG_RUNTIME_DIR` is set in your shell session (`echo $XDG_RUNTIME_DIR`). Vibe-Fi communicates with `discord-ipc-0` inside this directory.
+1. Make sure the Discord desktop app is running.
+2. In Discord Settings &rarr; **Activity Privacy**, enable **"Display current activity as a status message"**.
+3. Ensure `$XDG_RUNTIME_DIR` is set in your shell (`echo $XDG_RUNTIME_DIR`). Vibe-Fi communicates with `discord-ipc-0` inside this directory.
 </details>
 
 <details>
 <summary><b>4. Misaligned borders or visualizer blocks</b></summary>
 <br>
 
-Make sure your terminal has UTF-8 enabled and uses a font with proper box-drawing character glyphs (like *JetBrains Mono*, *Fira Code*, *Hack*, or *Geist Mono*):
+Ensure your terminal uses UTF-8 and a monospace font that supports box-drawing characters (such as *JetBrains Mono*, *Fira Code*, or *Hack*):
 
 ```bash
 export LANG=en_US.UTF-8
@@ -514,9 +525,9 @@ export TERM=xterm-256color
 
 ## Contributing
 
-If you'd like to contribute, please check our **[Contributing Guide](./CONTRIBUTING.md)** for architecture invariants, visualizer playbooks, and pull request guidelines.
+Contributions, bug reports, and suggestions are welcome!
 
-Got ideas for a new visualizer mode, extra stream resolvers, or UI polish? Issues and pull requests are warmly welcomed!
+Please check our **[Contributing Guide](./CONTRIBUTING.md)** for architecture guidelines, visualizer playbooks, and pull request steps.
 
 ---
 
@@ -524,12 +535,10 @@ Got ideas for a new visualizer mode, extra stream resolvers, or UI polish? Issue
 
 ### Support
 
-- If Vibe-Fi saves your laptop fans or adds some style to your rice, drop a star! ⭐
-- Share it with your fellow Linux ricers & terminal dwellers.
+- If you enjoy using Vibe-Fi, please consider starring the repository on GitHub! ⭐
+- Share it with your friends and fellow terminal users.
 
 ### Maintainer
-
-> PRs and issues are always open. Feel free to jump in!
 
 - **[@Swadesh-c0de](https://github.com/Swadesh-c0de)** - Creator and maintainer
 

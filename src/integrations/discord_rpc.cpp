@@ -106,7 +106,16 @@ void DiscordRPC::send_frame(int opcode, const std::string& payload) {
 }
 
 void DiscordRPC::update_presence(const std::string& song_title, const std::string& artist) {
-    if (!connected && !connect_to_discord()) return;
+    if (!connected) {
+        static std::chrono::steady_clock::time_point last_attempt{};
+        auto now = std::chrono::steady_clock::now();
+        if (last_attempt.time_since_epoch().count() > 0 &&
+            std::chrono::duration_cast<std::chrono::seconds>(now - last_attempt).count() < 10) {
+            return;
+        }
+        last_attempt = now;
+        if (!connect_to_discord()) return;
+    }
 
     std::string details = song_title;
     std::string state = artist.empty() ? "on Vibe-Fi" : "by " + artist;

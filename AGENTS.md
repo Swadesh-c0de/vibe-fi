@@ -68,6 +68,7 @@ graph TD
         STATE_INI["state.ini<br/>(Path, Seek, Vol, Theme, Visualizer)"]:::storage
         PLAYLIST_FILES["playlists/*.txt<br/>(Title|URL|Duration)"]:::storage
         LYRICS_CACHE["cache/lyrics/*.json<br/>(LRC & Plain Lyrics)"]:::storage
+        BOTTLE["bottle/<br/>(manifest.json, env.sh, bin/)"]:::storage
     end
 
     %% Data and Control Flow
@@ -142,7 +143,7 @@ stateDiagram-v2
 | `src/services/updater.hpp / .cpp` | `check_and_prompt_cached_update()`, `handle_uninstall()` | Cached startup prompt (< 0.1ms), 24h background check, uninstaller | `main.cpp`, `UI` |
 | `src/integrations/mpris.hpp / .cpp` | `MprisManager` | Linux D-Bus `org.mpris.MediaPlayer2` | `UI` |
 | `src/integrations/discord_rpc.hpp / .cpp` | `DiscordRPC` | Native Unix domain socket IPC | `UI` |
-| `src/utils/utils.hpp / .cpp` | `safe_stof()`, `safe_stoll()`, `find_executable()` | Utilities, path discovery, sanitization | All modules |
+| `src/utils/utils.hpp / .cpp` | `safe_stof()`, `safe_stoll()`, `find_executable()`, `BottleManifest` | Utilities, path discovery, Bottle isolation & manifest, sanitization | All modules |
 
 ---
 
@@ -178,6 +179,10 @@ When implementing queue progression or autoplay:
 ### ⚠️ Invariant 7: Background Worker Thread Safety & Monospace TUI Output
 - **Rule 1 (Thread Safety)**: Never invoke curses rendering functions (`show_message`, `wnoutrefresh`, `doupdate`) directly from background worker threads (MPRIS listener, updater background check). Background threads must communicate with the UI via atomic flags or thread-safe message queues consumed strictly on the main thread during `UI::run()`.
 - **Rule 2 (Monospace Alignment)**: Never output emojis in CLI error messages or TUI status bars. Use standard, aesthetic monospace ASCII/ANSI indicators (`::`, `->`, `[removed]`, `[retained]`, `[error]`) to avoid font-width rendering corruption across diverse terminal emulators.
+
+### ⚠️ Invariant 8: Bottle Dependency Isolation & Reverse-Dependency Guard
+- **Rule 1 (Bottle Isolation)**: Standalone tools not preinstalled on the system (such as `yt-dlp`) must be stored in `~/.vibe-fi/bottle/bin/` without root permissions, and `find_executable()` must prioritize `$VIBE_BOTTLE_DIR/bin` and `~/.vibe-fi/bottle/bin` over system paths.
+- **Rule 2 (Uninstall Dependency Guard)**: When uninstalling (`vibe --uninstall` or `uninstall.sh`), never unconditionally remove system libraries. Always query reverse dependencies (`apt-cache rdepends --installed`, `pacman -Qi`, `rpm -q --whatrequires`, `brew uses --installed`). Retain any package required by other software on the system, and prompt the user `[y/N]` before uninstallation of unneeded orphaned packages.
 
 ---
 

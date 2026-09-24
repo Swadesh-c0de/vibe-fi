@@ -12,7 +12,7 @@ std::vector<SearchResult> search_youtube(const std::string& query, int limit) {
     std::string search_term = "ytsearch" + std::to_string(limit) + ":" + query;
 
     std::string cmd = shell_escape(ytdl_path) + 
-                      " --print \"%(title)s|%(webpage_url)s|%(duration_string)s\"" +
+                      " --print \"%(title)s|%(uploader)s|%(webpage_url)s|%(duration_string)s\"" +
                       " --flat-playlist --no-warnings " + 
                       shell_escape(search_term) + " 2>/dev/null";
 
@@ -36,22 +36,41 @@ std::vector<SearchResult> search_youtube(const std::string& query, int limit) {
             }
             if (line.empty()) continue;
 
-            // Find the last two pipe characters to extract URL and duration
-            // This handles titles that contain pipe characters
+            // Find pipes from the right: duration, URL, uploader, title
             size_t last_pipe = line.find_last_of('|');
             if (last_pipe == std::string::npos) continue;
 
             size_t second_last_pipe = line.find_last_of('|', last_pipe - 1);
             if (second_last_pipe == std::string::npos) continue;
 
-            SearchResult result;
-            result.title = sanitize_text(line.substr(0, second_last_pipe));
-            result.url = line.substr(second_last_pipe + 1, last_pipe - second_last_pipe - 1);
-            result.duration = line.substr(last_pipe + 1);
+            size_t third_last_pipe = line.find_last_of('|', second_last_pipe - 1);
 
-            if (result.duration.empty() || result.duration == "NA") {
-                result.duration = "--:--";
+            std::string raw_title;
+            std::string uploader;
+            if (third_last_pipe != std::string::npos) {
+                raw_title = line.substr(0, third_last_pipe);
+                uploader = line.substr(third_last_pipe + 1, second_last_pipe - third_last_pipe - 1);
+            } else {
+                raw_title = line.substr(0, second_last_pipe);
             }
+
+            std::string title = sanitize_text(raw_title);
+            std::string url = line.substr(second_last_pipe + 1, last_pipe - second_last_pipe - 1);
+            std::string duration = line.substr(last_pipe + 1);
+
+            if (!uploader.empty() && uploader != "NA") {
+                if (uploader.length() > 8 && uploader.substr(uploader.length() - 8) == " - Topic") {
+                    uploader = uploader.substr(0, uploader.length() - 8);
+                }
+                if (title.find(" - ") == std::string::npos && !uploader.empty()) {
+                    title = uploader + " - " + title;
+                }
+            }
+
+            SearchResult result;
+            result.title = title;
+            result.url = url;
+            result.duration = (duration.empty() || duration == "NA") ? "--:--" : duration;
 
             if (!result.title.empty() && !result.url.empty()) {
                 results.push_back(result);

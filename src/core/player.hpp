@@ -32,6 +32,8 @@ public:
     bool is_playing();
     bool is_paused();
     bool is_idle();
+    bool is_loading();
+    bool is_buffering();
     double get_position();
     double get_duration();
     int get_volume();
@@ -47,7 +49,6 @@ public:
     bool has_playback_error() const { return playback_error; }
     bool consume_playback_error();
     std::string get_last_error() const { return last_error_str; }
-    bool is_loading() const { return loading_active; }
     void clear_playback_flags();
 
 private:

@@ -6,7 +6,7 @@
 #include <cstdint>
 
 #ifndef VIBE_FI_VERSION
-#define VIBE_FI_VERSION "1.1.1"
+#define VIBE_FI_VERSION "1.1.2"
 #endif
 
 /**

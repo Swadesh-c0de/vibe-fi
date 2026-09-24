@@ -98,7 +98,88 @@ void Visualizer::render(WINDOW* win, Player& player, VisualizerMode mode) {
     werase(win);
     update_track_visual_profile(player);
 
-    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle();
+    int height, width;
+    getmaxyx(win, height, width);
+
+    int draw_h = height - 2;
+    int draw_w = width - 2;
+    if (draw_h <= 0 || draw_w <= 0) {
+        wnoutrefresh(win);
+        return;
+    }
+
+    bool is_loading = player.is_loading() || player.is_buffering();
+    bool is_idle = player.is_idle();
+
+    if (is_loading) {
+        reset();
+        box(win, 0, 0);
+
+        std::string mode_str = (mode == VisualizerMode::NEON_FLAME) ? "NEON FLAME" :
+                               (mode == VisualizerMode::STEREO_BARS) ? "STEREO BARS" : "CAVA WAVE";
+        std::string title = "VISUALIZER: " + mode_str + " [FETCHING STREAM]";
+        if (player.is_buffering()) {
+            title = "VISUALIZER: " + mode_str + " [BUFFERING]";
+        }
+
+        wattron(win, COLOR_PAIR(1) | A_BOLD);
+        mvwprintw(win, 0, 2, " %s ", title.c_str());
+        wattroff(win, COLOR_PAIR(1) | A_BOLD);
+
+        // Monospace fetching pulse indicator: [ ● ○ ○ ○ ]
+        static int fetch_anim_frame = 0;
+        fetch_anim_frame++;
+        int dot_step = (fetch_anim_frame / 6) % 4;
+        std::string pulse = "[";
+        for (int b = 0; b < 4; ++b) {
+            pulse += (b == dot_step) ? " ●" : " ○";
+        }
+        pulse += " ]";
+
+        std::string msg = player.is_buffering() ? ":: Buffering audio stream..." : ":: Fetching audio stream...";
+        int msg_y = std::max(1, height / 2 - 1);
+        int pulse_y = std::max(1, height / 2 + 1);
+        int msg_x = std::max(2, (width - static_cast<int>(msg.length())) / 2);
+        int pulse_x = std::max(2, (width - static_cast<int>(pulse.length())) / 2);
+
+        wattron(win, COLOR_PAIR(3) | A_BOLD);
+        mvwprintw(win, msg_y, msg_x, "%s", msg.c_str());
+        wattroff(win, COLOR_PAIR(3) | A_BOLD);
+
+        wattron(win, COLOR_PAIR(2));
+        mvwprintw(win, pulse_y, pulse_x, "%s", pulse.c_str());
+        wattroff(win, COLOR_PAIR(2));
+
+        wnoutrefresh(win);
+        return;
+    }
+
+    if (is_idle) {
+        reset();
+        box(win, 0, 0);
+
+        std::string mode_str = (mode == VisualizerMode::NEON_FLAME) ? "NEON FLAME" :
+                               (mode == VisualizerMode::STEREO_BARS) ? "STEREO BARS" : "CAVA WAVE";
+        std::string title = "VISUALIZER: " + mode_str + " [IDLE]";
+
+        wattron(win, COLOR_PAIR(1) | A_BOLD);
+        mvwprintw(win, 0, 2, " %s ", title.c_str());
+        wattroff(win, COLOR_PAIR(1) | A_BOLD);
+
+        std::string idle_msg = ":: No audio playing. Press [S] to search or [L] for library.";
+        if (static_cast<int>(idle_msg.length()) > width - 4) {
+            idle_msg = ":: Press [S] to search or [L] for library.";
+        }
+        int msg_x = std::max(2, (width - static_cast<int>(idle_msg.length())) / 2);
+        wattron(win, COLOR_PAIR(1) | A_DIM);
+        mvwprintw(win, height / 2, msg_x, "%s", idle_msg.c_str());
+        wattroff(win, COLOR_PAIR(1) | A_DIM);
+
+        wnoutrefresh(win);
+        return;
+    }
+
+    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle() && !player.is_loading();
     AudioLevelStats stats = player.get_audio_stats();
     double pos = player.get_position();
     float track_bps = current_profile.bpm / 60.0f;
@@ -126,6 +207,8 @@ void Visualizer::render(WINDOW* win, Player& player, VisualizerMode mode) {
             int bpm_display = static_cast<int>(current_profile.bpm);
             mode_title += " " + metro + " [~" + std::to_string(bpm_display) + " BPM]";
         }
+    } else if (player.is_paused()) {
+        mode_title += " [PAUSED]";
     }
 
     // Draw borders with title
@@ -134,16 +217,6 @@ void Visualizer::render(WINDOW* win, Player& player, VisualizerMode mode) {
         wattron(win, COLOR_PAIR(1) | A_BOLD);
         mvwprintw(win, 0, 2, " %s ", mode_title.c_str());
         wattroff(win, COLOR_PAIR(1) | A_BOLD);
-    }
-
-    int height, width;
-    getmaxyx(win, height, width);
-
-    int draw_h = height - 2;
-    int draw_w = width - 2;
-    if (draw_h <= 0 || draw_w <= 0) {
-        wnoutrefresh(win);
-        return;
     }
 
     float vol = std::clamp(player.get_volume() / 100.0f, 0.2f, 1.2f);
@@ -164,7 +237,7 @@ void Visualizer::render(WINDOW* win, Player& player, VisualizerMode mode) {
 }
 
 void Visualizer::render_neon_flame(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats) {
-    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle();
+    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle() && !player.is_loading();
     float max_sub_levels = draw_h * 8.0f;
 
     float live_rms = stats.valid ? stats.rms_overall : 0.35f;
@@ -309,7 +382,7 @@ void Visualizer::render_neon_flame(WINDOW* win, Player& player, int draw_h, int 
 }
 
 void Visualizer::render_stereo_bars(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats) {
-    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle();
+    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle() && !player.is_loading();
     float max_sub_levels = draw_h * 8.0f;
 
     float live_rms = stats.valid ? stats.rms_overall : 0.35f;
@@ -450,7 +523,7 @@ void Visualizer::render_stereo_bars(WINDOW* win, Player& player, int draw_h, int
 }
 
 void Visualizer::render_cava_wave(WINDOW* win, Player& player, int draw_h, int draw_w, double pos, float vol, const AudioLevelStats& stats) {
-    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle();
+    bool is_active = player.is_playing() && !player.is_paused() && !player.is_idle() && !player.is_loading();
     float max_sub_levels = draw_h * 8.0f;
 
     // CAVA layout geometry: 2 columns wide per bar (or 1 on small terminals), 1-space gap

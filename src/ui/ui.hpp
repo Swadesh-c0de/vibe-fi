@@ -102,6 +102,7 @@ private:
     
     LyricsData current_lyrics_data;
     std::string current_lyrics_title;
+    std::string current_lyrics_artist;
     Visualizer visualizer;
     int lyrics_scroll_offset;
     bool lyrics_auto_scroll;
@@ -120,9 +121,10 @@ private:
     std::vector<PlaylistSong> play_queue;
     int queue_index;
     int track_retry_count;
+    bool lyrics_resolved_for_current_track;
 
     // Track playback helper
-    void start_track_playback(const std::string& title, const std::string& url);
+    void start_track_playback(const std::string& title, const std::string& url, const std::string& duration_str = "", const std::string& artist_hint = "");
 
     // Drawing methods
     void draw();
@@ -146,7 +148,7 @@ private:
     
     // Helpers
     void update_preview_songs();
-    void fetch_current_lyrics(std::string title_override = "", std::string url_override = "");
+    void fetch_current_lyrics(std::string title_override = "", std::string url_override = "", double duration_override = 0.0, std::string artist_override = "");
     void draw_borders(WINDOW* win, const std::string& title);
     
     // Input handling
@@ -190,6 +192,22 @@ private:
     std::string pending_update_version;
     std::mutex update_notification_mutex;
     void notify_update_available(const std::string& version);
+
+    // Async lyrics state
+    struct PendingLyricsResult {
+        uint64_t request_id = 0;
+        std::string title;
+        std::string artist;
+        LyricsData data;
+        bool ready = false;
+    };
+    struct AsyncLyricsState {
+        std::mutex mutex;
+        std::atomic<uint64_t> request_id{0};
+        std::atomic<bool> ui_alive{true};
+        PendingLyricsResult pending_result;
+    };
+    std::shared_ptr<AsyncLyricsState> lyrics_state;
 };
 
 #endif // UI_HPP
