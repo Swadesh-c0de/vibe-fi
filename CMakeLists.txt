@@ -33,6 +33,8 @@ pkg_check_modules(NCURSES ncursesw)
 if(NOT NCURSES_FOUND)
     pkg_check_modules(NCURSES REQUIRED ncurses)
 endif()
+add_compile_definitions(_XOPEN_SOURCE_EXTENDED=1)
+add_compile_definitions(NCURSES_WIDECHAR=1)
 
 # MPRIS / D-Bus support (enabled by default on Linux, disabled on macOS/Windows)
 if(APPLE OR WIN32)

@@ -42,6 +42,10 @@ UI::UI(Player& p)
 {
     discord_rpc = std::make_unique<DiscordRPC>("1345437817082089472"); // Vibe-Fi Client ID
 
+    // Suppress external library stderr noise (PipeWire, ALSA, FFmpeg) to protect curses screen
+    std::string log_file = get_vibe_dir() + "/vibe.log";
+    std::freopen(log_file.c_str(), "a", stderr);
+
     set_escdelay(25);
     setlocale(LC_ALL, "");
     setlocale(LC_NUMERIC, "C"); // libmpv requires LC_NUMERIC to remain "C"
