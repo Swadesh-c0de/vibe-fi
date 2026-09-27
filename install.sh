@@ -252,6 +252,9 @@ EOF
 # Vibe-Fi Bottle Environment Script
 export PATH="$BOTTLE_BIN_DIR:\$PATH"
 export VIBE_BOTTLE_DIR="$BOTTLE_DIR"
+if [[ -z "\$LANG" || "\$LANG" == "C" || "\$LANG" == "POSIX" || ("\$LANG" != *"UTF-8"* && "\$LANG" != *"utf8"*) ]]; then
+    export LANG="C.UTF-8"
+fi
 EOF
     chmod +x "$BOTTLE_DIR/env.sh"
 

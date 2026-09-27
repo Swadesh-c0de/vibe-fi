@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <chrono>
 #include <cstring>
+#include <clocale>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -742,4 +743,53 @@ int64_t safe_stoll(const std::string& s, int64_t default_val) {
     } catch (...) {
         return default_val;
     }
+}
+
+void setup_utf8_locale() {
+    // 1. If environment forces ASCII/C/POSIX via LC_ALL, clear it so UTF-8 can take effect
+    const char* env_lc_all = std::getenv("LC_ALL");
+    if (env_lc_all && (std::strcmp(env_lc_all, "C") == 0 || std::strcmp(env_lc_all, "POSIX") == 0)) {
+#ifdef _WIN32
+        _putenv_s("LC_ALL", "");
+#else
+        unsetenv("LC_ALL");
+#endif
+    }
+
+    // 2. Ensure LANG specifies UTF-8 so child processes (yt-dlp, ffmpeg) inherit UTF-8
+    const char* env_lang = std::getenv("LANG");
+    if (!env_lang || std::strcmp(env_lang, "C") == 0 || std::strcmp(env_lang, "POSIX") == 0 ||
+        (!std::strstr(env_lang, "UTF-8") && !std::strstr(env_lang, "utf8") && !std::strstr(env_lang, "UTF8"))) {
+#ifdef _WIN32
+        _putenv_s("LANG", "C.UTF-8");
+#else
+        setenv("LANG", "C.UTF-8", 1);
+#endif
+    }
+
+    // 3. Ensure TERM is set so curses doesn't fail in minimal containers
+    const char* env_term = std::getenv("TERM");
+    if (!env_term || std::strcmp(env_term, "") == 0 || std::strcmp(env_term, "dumb") == 0) {
+#ifdef _WIN32
+        _putenv_s("TERM", "xterm-256color");
+#else
+        setenv("TERM", "xterm-256color", 0);
+#endif
+    }
+
+    // 4. Configure process locale: prefer host user locale, fallback to C.UTF-8 or en_US.UTF-8
+    char* loc = std::setlocale(LC_ALL, "");
+    if (!loc || std::strcmp(loc, "C") == 0 || std::strcmp(loc, "POSIX") == 0 ||
+        (!std::strstr(loc, "UTF-8") && !std::strstr(loc, "utf8") && !std::strstr(loc, "UTF8"))) {
+        if (!std::setlocale(LC_ALL, "C.UTF-8")) {
+            if (!std::setlocale(LC_ALL, "en_US.UTF-8")) {
+                if (!std::setlocale(LC_ALL, "en_GB.UTF-8")) {
+                    std::setlocale(LC_ALL, "");
+                }
+            }
+        }
+    }
+
+    // 5. Invariant 1: libmpv requires LC_NUMERIC to remain "C" for decimal timestamp parsing
+    std::setlocale(LC_NUMERIC, "C");
 }

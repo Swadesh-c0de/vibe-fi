@@ -43,8 +43,7 @@ static void print_help(const char* prog_name) {
 }
 
 int main(int argc, char* argv[]) {
-    std::setlocale(LC_ALL, "");
-    std::setlocale(LC_NUMERIC, "C"); // libmpv requires LC_NUMERIC to remain "C"
+    setup_utf8_locale();
     std::vector<std::string> startup_errors;
     std::vector<SearchResult> initial_queue;
 

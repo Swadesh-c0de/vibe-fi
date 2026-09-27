@@ -42,6 +42,7 @@ std::string clean_song_title(const std::string& title);
 void parse_artist_and_title(const std::string& raw_title, const std::string& raw_artist, std::string& out_artist, std::string& out_title, const std::string& context_hint = "");
 std::string sanitize_text(const std::string& text);
 std::string get_vibe_dir();
+void setup_utf8_locale();
 
 // Bottle dependency isolation helpers
 struct BottleManifest {

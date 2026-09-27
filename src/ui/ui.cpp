@@ -47,8 +47,7 @@ UI::UI(Player& p)
     std::freopen(log_file.c_str(), "a", stderr);
 
     set_escdelay(25);
-    setlocale(LC_ALL, "");
-    setlocale(LC_NUMERIC, "C"); // libmpv requires LC_NUMERIC to remain "C"
+    setup_utf8_locale();
     initscr();
     cbreak();
     noecho();
