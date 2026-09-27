@@ -30,6 +30,30 @@ std::string shell_escape(const std::string& arg) {
     return escaped;
 }
 
+static int parse_ytdlp_year(const std::string& ver_str) {
+    if (ver_str.length() < 4) return 0;
+    try {
+        return std::stoi(ver_str.substr(0, 4));
+    } catch (...) {
+        return 0;
+    }
+}
+
+static std::string get_executable_version(const std::string& exe_path) {
+    if (exe_path.empty() || !fs::exists(exe_path) || access(exe_path.c_str(), X_OK) != 0) {
+        return "";
+    }
+    UniquePipe p(popen((shell_escape(exe_path) + " --version 2>/dev/null").c_str(), "r"));
+    if (!p) return "";
+    char buf[128];
+    if (fgets(buf, sizeof(buf), p.get())) {
+        std::string ver = buf;
+        while (!ver.empty() && (ver.back() == '\n' || ver.back() == '\r')) ver.pop_back();
+        return ver;
+    }
+    return "";
+}
+
 std::string find_executable(const std::string& name) {
     const char* home = getenv("HOME");
     std::vector<std::string> candidates;
@@ -63,13 +87,49 @@ std::string find_executable(const std::string& name) {
         }
     }
 
+    std::string first_valid_path;
     for (const auto& path : candidates) {
         if (fs::exists(path) && access(path.c_str(), X_OK) == 0) {
-            return path;
+            if (name != "yt-dlp") {
+                return path;
+            }
+            if (first_valid_path.empty()) {
+                first_valid_path = path;
+            }
+            // For yt-dlp, verify it is a modern release (>= 2025)
+            std::string ver = get_executable_version(path);
+            int year = parse_ytdlp_year(ver);
+            if (year >= 2025) {
+                return path;
+            }
         }
     }
 
-    // Fallback to name if not found specifically
+    // If searching for yt-dlp and no candidate is modern (>= 2025), automatically install
+    // or update the isolated standalone binary in Vibe Bottle (~/.vibe-fi/bottle/bin/yt-dlp)
+    if (name == "yt-dlp") {
+        static bool auto_install_attempted = false;
+        if (!auto_install_attempted && is_online()) {
+            auto_install_attempted = true;
+            std::string bbin = get_bottle_bin_dir();
+            std::string target_bin = bbin + "/yt-dlp";
+            std::error_code ec;
+            fs::create_directories(bbin, ec);
+
+            std::cout << ":: Outdated or missing yt-dlp detected. Automatically installing isolated stream resolver to Vibe Bottle...\n";
+            std::string download_cmd = "curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o " + shell_escape(target_bin) + " && chmod a+rx " + shell_escape(target_bin);
+            int ret = std::system(download_cmd.c_str());
+            if (ret == 0 && fs::exists(target_bin) && access(target_bin.c_str(), X_OK) == 0) {
+                std::string new_ver = get_executable_version(target_bin);
+                std::cout << ":: Modern yt-dlp successfully installed: " << (new_ver.empty() ? "latest" : new_ver) << "\n";
+                return target_bin;
+            }
+        }
+        if (!first_valid_path.empty()) {
+            return first_valid_path;
+        }
+    }
+
     return name;
 }
 
@@ -540,10 +600,15 @@ BottleManifest read_bottle_manifest() {
     return manifest;
 }
 
-bool ensure_bottled_ytdlp() {
-    std::string current_ytdl = find_executable("yt-dlp");
-    if (current_ytdl != "yt-dlp" && fs::exists(current_ytdl)) {
-        return true;
+bool ensure_bottled_ytdlp(bool force_download) {
+    if (!force_download) {
+        std::string current_ytdl = find_executable("yt-dlp");
+        if (current_ytdl != "yt-dlp" && fs::exists(current_ytdl)) {
+            std::string ver = get_executable_version(current_ytdl);
+            if (parse_ytdlp_year(ver) >= 2025) {
+                return true;
+            }
+        }
     }
 
     std::string bbin = get_bottle_bin_dir();
@@ -551,7 +616,7 @@ bool ensure_bottled_ytdlp() {
     fs::create_directories(bbin, ec);
 
     std::string target_bin = bbin + "/yt-dlp";
-    std::cout << ":: Downloading isolated yt-dlp to Vibe Bottle (" << target_bin << ")...\n";
+    std::cout << ":: Downloading isolated modern yt-dlp to Vibe Bottle (" << target_bin << ")...\n";
     std::string download_cmd = "curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o " + shell_escape(target_bin) + " && chmod a+rx " + shell_escape(target_bin);
     int ret = std::system(download_cmd.c_str());
     return (ret == 0 && fs::exists(target_bin) && access(target_bin.c_str(), X_OK) == 0);
@@ -603,12 +668,42 @@ void print_bottle_status() {
         }
     } else {
         std::cout << "Status:               \033[1;33mHost-Native / Unbottled (no bottle manifest)\033[0m\n";
-        std::cout << "\nTool Detection in PATH:\n";
-        std::string ytdl = find_executable("yt-dlp");
-        std::string ffmpeg = find_executable("ffmpeg");
-        std::cout << "  yt-dlp:  " << (ytdl == "yt-dlp" ? "not found" : ytdl) << "\n";
-        std::cout << "  ffmpeg:  " << (ffmpeg == "ffmpeg" ? "not found" : ffmpeg) << "\n";
     }
+
+    std::string ytdl = find_executable("yt-dlp");
+    std::string ffmpeg = find_executable("ffmpeg");
+    std::string ytdl_ver;
+    bool ytdl_outdated = false;
+    if (ytdl != "yt-dlp" && fs::exists(ytdl)) {
+        UniquePipe p(popen((shell_escape(ytdl) + " --version 2>/dev/null").c_str(), "r"));
+        if (p) {
+            char buf[128];
+            if (fgets(buf, sizeof(buf), p.get())) {
+                ytdl_ver = buf;
+                while (!ytdl_ver.empty() && (ytdl_ver.back() == '\n' || ytdl_ver.back() == '\r')) ytdl_ver.pop_back();
+            }
+        }
+        try {
+            if (ytdl_ver.length() >= 4 && std::stoi(ytdl_ver.substr(0, 4)) < 2025) {
+                ytdl_outdated = true;
+            }
+        } catch (...) {}
+    }
+
+    std::cout << "\n\033[1;33mActive Audio Stream Resolver:\033[0m\n";
+    std::cout << "  yt-dlp binary:      " << (ytdl == "yt-dlp" ? "\033[1;31mnot found\033[0m" : ("\033[0;32m" + ytdl + "\033[0m")) << "\n";
+    std::cout << "  yt-dlp version:     ";
+    if (ytdl_ver.empty()) {
+        std::cout << "\033[1;31munknown / not executable\033[0m\n";
+    } else if (ytdl_outdated) {
+        std::cout << "\033[1;31m" << ytdl_ver << " (OUTDATED)\033[0m\n";
+        std::cout << "  \033[1;31m! Notice: YouTube audio streaming requires yt-dlp >= 2025.01.01.\033[0m\n";
+        std::cout << "  \033[1;33m  Fix: Install latest standalone binary into Vibe-Fi bottle:\033[0m\n";
+        std::cout << "  \033[0;36m  mkdir -p ~/.vibe-fi/bottle/bin && curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.vibe-fi/bottle/bin/yt-dlp && chmod +x ~/.vibe-fi/bottle/bin/yt-dlp\033[0m\n";
+    } else {
+        std::cout << "\033[1;32m" << ytdl_ver << " (OK)\033[0m\n";
+    }
+    std::cout << "  ffmpeg binary:      " << (ffmpeg == "ffmpeg" ? "\033[1;31mnot found\033[0m" : ("\033[0;32m" + ffmpeg + "\033[0m")) << "\n";
 
     std::cout << "\n\033[1;36m─────────────────────────────────────────────────────────────\033[0m\n\n";
 }

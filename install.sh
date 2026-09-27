@@ -177,23 +177,55 @@ setup_dependencies() {
     # Bottle Standalone Tool Isolation (yt-dlp)
     echo ""
     echo -e "${YELLOW}Inspecting standalone stream resolver (yt-dlp)...${NC}"
+    local min_ytdl_date=20250101
+    local need_bottle_ytdl=0
+
     if command -v yt-dlp &> /dev/null; then
-        local ytdl_ver
-        ytdl_ver=$(yt-dlp --version 2>/dev/null || echo "OK")
-        echo -e "${GREEN}Host yt-dlp detected:${NC} $ytdl_ver [using preinstalled host binary]"
-        PREINSTALLED_DEPS+=("yt-dlp")
-    elif [[ -x "$BOTTLE_BIN_DIR/yt-dlp" ]]; then
-        echo -e "${GREEN}Existing bottled yt-dlp detected:${NC} $("$BOTTLE_BIN_DIR/yt-dlp" --version 2>/dev/null || echo "OK")"
-        BOTTLED_BINS+=("yt-dlp")
-    else
-        echo -e "${YELLOW}yt-dlp not found on system. Installing isolated binary to Vibe Bottle...${NC}"
-        mkdir -p "$BOTTLE_BIN_DIR"
-        if curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "$BOTTLE_BIN_DIR/yt-dlp"; then
-            chmod a+rx "$BOTTLE_BIN_DIR/yt-dlp"
-            BOTTLED_BINS+=("yt-dlp")
-            echo -e "${GREEN}Isolated yt-dlp successfully installed to:${NC} ${CYAN}$BOTTLE_BIN_DIR/yt-dlp${NC} (zero root permission needed)"
+        local host_ytdl_ver
+        host_ytdl_ver=$(yt-dlp --version 2>/dev/null || echo "")
+        local host_ytdl_date
+        host_ytdl_date=$(echo "$host_ytdl_ver" | awk -F. '($1 ~ /^[0-9]{4}$/) { printf("%04d%02d%02d\n", $1, $2, $3); exit } END { print "0" }' | head -n 1)
+
+        if [[ -n "$host_ytdl_date" && "$host_ytdl_date" -ge "$min_ytdl_date" ]]; then
+            echo -e "${GREEN}Host yt-dlp detected:${NC} $host_ytdl_ver [modern version >= 2025 OK]"
+            PREINSTALLED_DEPS+=("yt-dlp")
         else
-            echo -e "${RED}Failed to download isolated yt-dlp. YouTube search and streaming may be limited.${NC}"
+            echo -e "${YELLOW}Host yt-dlp detected (${host_ytdl_ver:-unknown}), but it is outdated (< 2025.01.01).${NC}"
+            echo -e "${YELLOW}Modern YouTube streaming requires recent cipher & SABR support.${NC}"
+            need_bottle_ytdl=1
+        fi
+    else
+        need_bottle_ytdl=1
+    fi
+
+    if [[ "$need_bottle_ytdl" -eq 1 ]]; then
+        if [[ -x "$BOTTLE_BIN_DIR/yt-dlp" ]]; then
+            local bottled_ver
+            bottled_ver=$("$BOTTLE_BIN_DIR/yt-dlp" --version 2>/dev/null || echo "")
+            local bottled_date
+            bottled_date=$(echo "$bottled_ver" | awk -F. '($1 ~ /^[0-9]{4}$/) { printf("%04d%02d%02d\n", $1, $2, $3); exit } END { print "0" }' | head -n 1)
+            if [[ -n "$bottled_date" && "$bottled_date" -ge "$min_ytdl_date" ]]; then
+                echo -e "${GREEN}Using existing bottled yt-dlp:${NC} $bottled_ver [modern version OK]"
+                BOTTLED_BINS+=("yt-dlp")
+            else
+                echo -e "${YELLOW}Existing bottled yt-dlp is outdated ($bottled_ver). Updating to latest release...${NC}"
+                mkdir -p "$BOTTLE_BIN_DIR"
+                if curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "$BOTTLE_BIN_DIR/yt-dlp"; then
+                    chmod a+rx "$BOTTLE_BIN_DIR/yt-dlp"
+                    BOTTLED_BINS+=("yt-dlp")
+                    echo -e "${GREEN}Isolated yt-dlp updated to:${NC} $("$BOTTLE_BIN_DIR/yt-dlp" --version 2>/dev/null || echo "latest")"
+                fi
+            fi
+        else
+            echo -e "${YELLOW}Installing isolated latest yt-dlp to Vibe Bottle...${NC}"
+            mkdir -p "$BOTTLE_BIN_DIR"
+            if curl -sL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "$BOTTLE_BIN_DIR/yt-dlp"; then
+                chmod a+rx "$BOTTLE_BIN_DIR/yt-dlp"
+                BOTTLED_BINS+=("yt-dlp")
+                echo -e "${GREEN}Isolated yt-dlp successfully installed to:${NC} ${CYAN}$BOTTLE_BIN_DIR/yt-dlp${NC} (zero root permission needed)"
+            else
+                echo -e "${RED}Failed to download isolated yt-dlp. YouTube search and streaming may be limited.${NC}"
+            fi
         fi
     fi
 

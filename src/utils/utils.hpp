@@ -60,7 +60,7 @@ std::string get_bottle_dir();
 std::string get_bottle_bin_dir();
 bool is_bottle_active();
 BottleManifest read_bottle_manifest();
-bool ensure_bottled_ytdlp();
+bool ensure_bottled_ytdlp(bool force_download = false);
 void print_bottle_status();
 
 // Safe numeric conversions

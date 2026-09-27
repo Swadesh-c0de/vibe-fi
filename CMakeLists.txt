@@ -29,7 +29,10 @@ endif()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MPV REQUIRED mpv)
-pkg_check_modules(NCURSES REQUIRED ncurses)
+pkg_check_modules(NCURSES ncursesw)
+if(NOT NCURSES_FOUND)
+    pkg_check_modules(NCURSES REQUIRED ncurses)
+endif()
 
 # MPRIS / D-Bus support (enabled by default on Linux, disabled on macOS/Windows)
 if(APPLE OR WIN32)

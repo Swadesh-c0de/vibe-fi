@@ -92,6 +92,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Ensure modern stream resolver (yt-dlp >= 2025) is available before initializing player
+    ensure_bottled_ytdlp();
+
     try {
         Player player;
         bool start_playback = false;

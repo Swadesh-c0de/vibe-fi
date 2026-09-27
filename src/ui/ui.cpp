@@ -1987,7 +1987,16 @@ void UI::start_track_playback(const std::string& title, const std::string& url, 
             }
         }
 
-        player.load(url);
+        std::string stream_target = url;
+        if (track_retry_count > 0 && is_online() &&
+            (url.find("youtube.com") != std::string::npos || url.find("youtu.be") != std::string::npos)) {
+            StreamInfo sinfo = resolve_stream_info(url);
+            if (!sinfo.stream_url.empty() && sinfo.stream_url != url) {
+                stream_target = sinfo.stream_url;
+            }
+        }
+
+        player.load(stream_target);
         player.set_property("force-media-title", display_title);
         player.play();
 
