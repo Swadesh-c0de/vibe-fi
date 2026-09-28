@@ -47,7 +47,11 @@ UI::UI(Player& p)
 
     // Suppress external library stderr noise (PipeWire, ALSA, FFmpeg) to protect curses screen
     std::string log_file = get_vibe_dir() + "/vibe.log";
-    std::freopen(log_file.c_str(), "a", stderr);
+    FILE* log_fp = std::freopen(log_file.c_str(), "a", stderr);
+    if (!log_fp) {
+        FILE* null_fp = std::freopen("/dev/null", "a", stderr);
+        (void)null_fp;
+    }
 
     set_escdelay(25);
     setup_utf8_locale();
