@@ -260,6 +260,7 @@ vibe "https://www.youtube.com/watch?v=5qap5aO4i9A"
 vibe ~/Music/song.flac
 
 # Useful Flags
+vibe -r            # Resume previous session (track, seek, volume)
 vibe --bottle      # Check isolated bottle dependencies and status
 vibe --update      # Check for and apply latest updates
 vibe --uninstall   # Uninstall Vibe-Fi and clean dependencies

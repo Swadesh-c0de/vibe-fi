@@ -24,6 +24,7 @@ static void print_help(const char* prog_name) {
               << "  " << prog_name << " <url>                Stream YouTube audio directly\n"
               << "  " << prog_name << " <file|dir>           Play local audio file or queue folder\n"
               << "  " << prog_name << " <search query>       Search and play track from YouTube\n"
+              << "  " << prog_name << " --restore | -r       Resume previous playback session\n"
               << "  " << prog_name << " --bottle | -b         Show isolated bottle dependency status\n"
               << "  " << prog_name << " --update | -u        Check and apply latest updates\n"
               << "  " << prog_name << " --uninstall          Uninstall Vibe-Fi and bottle dependencies\n"
@@ -83,13 +84,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Check for --no-update flag and separate playable inputs
+    // Check for --no-update, --restore / -r flag and separate playable inputs
     bool skip_update = false;
+    bool restore_session = false;
     std::vector<std::string> playback_inputs;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--no-update") {
             skip_update = true;
+        } else if (arg == "--restore" || arg == "-r") {
+            restore_session = true;
         } else {
             playback_inputs.push_back(arg);
         }
@@ -189,7 +193,9 @@ int main(int argc, char* argv[]) {
 
         UI ui(player);
 
-        if (!start_playback && playback_inputs.empty()) {
+        if (restore_session) {
+            ui.load_state();
+        } else if (!start_playback && playback_inputs.empty()) {
             ui.set_mode(AppMode::INTRO);
         } else if (start_playback) {
             ui.set_mode(AppMode::PLAYBACK);

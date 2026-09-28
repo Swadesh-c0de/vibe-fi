@@ -69,6 +69,7 @@ public:
     void show_message(const std::string& msg);
     void set_mode(AppMode mode);
     void set_initial_queue(const std::vector<SearchResult>& results);
+    void load_state();
 
 private:
     Player& player;
@@ -150,7 +151,6 @@ private:
     std::string song_to_move_origin_playlist;
 
     void save_state();
-    void load_state();
     
     // Helpers
     void update_preview_songs();
