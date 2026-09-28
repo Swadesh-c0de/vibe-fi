@@ -110,9 +110,9 @@ int main(int argc, char* argv[]) {
                 }
                 std::cout << "Resolving stream: " << input << "..." << std::endl;
                 StreamInfo info;
+                url_to_play = input;
                 try {
                     info = resolve_stream_info(input);
-                    url_to_play = info.stream_url;
                 } catch (const std::exception& e) {
                     startup_errors.push_back("Failed to resolve URL: " + input);
                     continue;

@@ -250,19 +250,22 @@ void UI::run() {
             }
         } else if (player.consume_playback_error()) {
             // Playback or buffering error occurred
+            std::string err_desc = player.get_last_error();
+            if (err_desc.empty()) err_desc = "stream error";
+
             if (queue_index >= 0 && queue_index < static_cast<int>(play_queue.size())) {
                 const auto& song = play_queue[queue_index];
                 if (track_retry_count < 2) {
                     track_retry_count++;
-                    show_message("Streaming error, retrying... (" + std::to_string(track_retry_count) + "/2)");
+                    show_message("Streaming error (" + err_desc + "), retrying... (" + std::to_string(track_retry_count) + "/2)");
                     start_track_playback(song.title, song.url, song.duration, is_playing_from_playlist ? playing_playlist_name : "");
                 } else {
                     track_retry_count = 0;
-                    show_message("Failed to stream: " + song.title + " (press R to retry, N for next)");
+                    show_message("Failed to stream: " + song.title + " [" + err_desc + "] (press R to retry, N for next)");
                 }
             } else {
                 track_retry_count = 0;
-                show_message("Playback error: " + player.get_last_error());
+                show_message("Playback error: " + err_desc);
             }
         }
 
@@ -647,6 +650,7 @@ void UI::handle_playback_input(int ch) {
                     show_message("Network unavailable. Cannot stream track.");
                     break;
                 }
+                track_retry_count = 0;
                 player.load(last_played_path);
                 player.play();
                 lyrics_scroll_offset = 0;
@@ -1990,16 +1994,7 @@ void UI::start_track_playback(const std::string& title, const std::string& url, 
             }
         }
 
-        std::string stream_target = url;
-        if (track_retry_count > 0 && is_online() &&
-            (url.find("youtube.com") != std::string::npos || url.find("youtu.be") != std::string::npos)) {
-            StreamInfo sinfo = resolve_stream_info(url);
-            if (!sinfo.stream_url.empty() && sinfo.stream_url != url) {
-                stream_target = sinfo.stream_url;
-            }
-        }
-
-        player.load(stream_target);
+        player.load(url);
         player.set_property("force-media-title", display_title);
         player.play();
 
@@ -2210,8 +2205,10 @@ void UI::load_state() {
         player.load(path);
         player.set_property("start", "0");
         player.set_volume(volume);
+        player.play();
         last_played_path = path;
         queue_index = index;
+        track_retry_count = 0;
         lyrics_resolved_for_current_track = false;
 
         if (!saved_title.empty()) {

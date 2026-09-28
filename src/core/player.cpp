@@ -16,16 +16,20 @@ Player::Player() : mpv(nullptr) {
     // Configure mpv defaults for optimal, resilient audio streaming
     check_error(mpv_set_option_string(mpv, "vo", "null"));                   // Audio only, disable video window
     check_error(mpv_set_option_string(mpv, "ytdl", "yes"));                  // Enable YouTube extraction
-    check_error(mpv_set_option_string(mpv, "ytdl-format", "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"));
+    check_error(mpv_set_option_string(mpv, "ytdl-format", "251/140/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"));
     check_error(mpv_set_option_string(mpv, "audio-display", "no"));          // Don't render embedded album art as video
 
-    // Network resilience: auto-reconnect streamed audio on network hiccups, buffer up to 32MB ahead
-    mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
+    // Audio output fallback chain (PipeWire -> PulseAudio -> ALSA -> system default)
+    mpv_set_option_string(mpv, "ao", "pipewire,pulse,alsa,coreaudio,audiotrack,");
+
+    // Network resilience: buffer up to 32MB ahead, 30s timeout, safe reconnect
+    mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_delay_max=5");
     mpv_set_option_string(mpv, "network-timeout", "30");
     mpv_set_option_string(mpv, "demuxer-max-bytes", "32MiB");
     mpv_set_option_string(mpv, "demuxer-readahead-secs", "60");
-    mpv_set_option_string(mpv, "ytdl-raw-options", "no-check-certificates=,retries=3,socket-timeout=15");
-    mpv_set_option_string(mpv, "user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
+
+    // Request error/warning logs from mpv to record into vibe.log
+    mpv_request_log_messages(mpv, "warn");
 
     // Dynamically locate yt-dlp across PATH and common install directories
     std::string ytdl_path = find_executable("yt-dlp");
@@ -245,10 +249,28 @@ void Player::poll_events() {
             case MPV_EVENT_FILE_LOADED:
                 loading_active = false;
                 break;
+            case MPV_EVENT_LOG_MESSAGE: {
+                mpv_event_log_message* msg = static_cast<mpv_event_log_message*>(event->data);
+                if (msg && msg->log_level <= MPV_LOG_LEVEL_WARN) {
+                    std::fprintf(stderr, "[mpv::%s] %s\n", msg->prefix, msg->text);
+                    std::fflush(stderr);
+                }
+                break;
+            }
             case MPV_EVENT_END_FILE: {
                 loading_active = false;
                 mpv_event_end_file* eef = static_cast<mpv_event_end_file*>(event->data);
                 if (eef) {
+                    std::fprintf(stderr, "[vibe::mpv] END_FILE reason=%d (%s) error=%d (%s)\n",
+                                 eef->reason,
+                                 (eef->reason == MPV_END_FILE_REASON_EOF ? "EOF" :
+                                  eef->reason == MPV_END_FILE_REASON_STOP ? "STOP" :
+                                  eef->reason == MPV_END_FILE_REASON_QUIT ? "QUIT" :
+                                  eef->reason == MPV_END_FILE_REASON_ERROR ? "ERROR" :
+                                  eef->reason == MPV_END_FILE_REASON_REDIRECT ? "REDIRECT" : "OTHER"),
+                                 eef->error, mpv_error_string(eef->error));
+                    std::fflush(stderr);
+
                     if (eef->reason == MPV_END_FILE_REASON_EOF) {
                         track_finished = true;
                     } else if (eef->reason == MPV_END_FILE_REASON_ERROR) {
