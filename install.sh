@@ -236,7 +236,7 @@ setup_dependencies() {
 
     cat <<EOF > "$BOTTLE_DIR/manifest.json"
 {
-  "bottle_version": "1.1.2",
+  "bottle_version": "1.1.3",
   "bottle_dir": "$BOTTLE_DIR",
   "created_at": "$created_ts",
   "platform": "$OS",

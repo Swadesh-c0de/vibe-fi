@@ -1444,7 +1444,7 @@ void UI::draw_intro() {
     wattroff(main_win, COLOR_PAIR(1) | A_BOLD);
     
 #ifndef VIBE_FI_VERSION
-#define VIBE_FI_VERSION "1.1.2"
+#define VIBE_FI_VERSION "1.1.3"
 #endif
     std::string welcome = std::string("Vibe-Fi Terminal Music Player (v") + VIBE_FI_VERSION + ")";
     int welcome_x = (width - static_cast<int>(welcome.length())) / 2;

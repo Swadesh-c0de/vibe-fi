@@ -14,7 +14,7 @@
 namespace fs = std::filesystem;
 
 #ifndef VIBE_FI_VERSION
-#define VIBE_FI_VERSION "1.1.2"
+#define VIBE_FI_VERSION "1.1.3"
 #endif
 
 static void print_help(const char* prog_name) {

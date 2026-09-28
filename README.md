@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Swadesh-c0de/vibe-fi/releases/tag/v1.1.2"><img src="https://img.shields.io/github/v/release/Swadesh-c0de/vibe-fi.svg?style=flat-square&color=6366f1" alt="Release" /></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-38bdf8.svg?style=flat-square" alt="License" /></a> <img src="https://img.shields.io/badge/c%2B%2B-17-ec4899.svg?style=flat-square&logo=c%2B%2B&logoColor=white" alt="C++17" /> <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos-10b981.svg?style=flat-square" alt="Platform" /> <a href="https://github.com/Swadesh-c0de/vibe-fi/stargazers"><img src="https://img.shields.io/github/stars/Swadesh-c0de/vibe-fi?style=flat-square&color=eab308" alt="GitHub Stars" /></a> <a href="https://github.com/Swadesh-c0de/vibe-fi/pulls"><img src="https://img.shields.io/badge/PRs-welcome-a855f7.svg?style=flat-square" alt="PRs Welcome" /></a>
+  <a href="https://github.com/Swadesh-c0de/vibe-fi/releases/tag/v1.1.3"><img src="https://img.shields.io/github/v/release/Swadesh-c0de/vibe-fi.svg?style=flat-square&color=6366f1" alt="Release" /></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-38bdf8.svg?style=flat-square" alt="License" /></a> <img src="https://img.shields.io/badge/c%2B%2B-17-ec4899.svg?style=flat-square&logo=c%2B%2B&logoColor=white" alt="C++17" /> <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos-10b981.svg?style=flat-square" alt="Platform" /> <a href="https://github.com/Swadesh-c0de/vibe-fi/stargazers"><img src="https://img.shields.io/github/stars/Swadesh-c0de/vibe-fi?style=flat-square&color=eab308" alt="GitHub Stars" /></a> <a href="https://github.com/Swadesh-c0de/vibe-fi/pulls"><img src="https://img.shields.io/badge/PRs-welcome-a855f7.svg?style=flat-square" alt="PRs Welcome" /></a>
 </p>
 
 <br><br>
@@ -43,7 +43,7 @@
 - [Comparison](#comparison)
 - [Installation](#installation)
   - [Automated Script (Recommended)](#automated-script-recommended)
-  - [GitHub Releases (v1.1.2)](#github-releases-v112)
+  - [GitHub Releases (v1.1.3)](#github-releases-v113)
   - [Building from Source](#building-from-source)
 - [Usage & Workflow](#usage--workflow)
   - [CLI Commands & Search](#cli-commands--search)
@@ -153,15 +153,15 @@ chmod +x install.sh
 
 ---
 
-### GitHub Releases (v1.1.2)
+### GitHub Releases (v1.1.3)
 
-You can also download and run a release archive directly from the [v1.1.2 Release Page](https://github.com/Swadesh-c0de/vibe-fi/releases/tag/v1.1.2):
+You can also download and run a release archive directly from the [v1.1.3 Release Page](https://github.com/Swadesh-c0de/vibe-fi/releases/tag/v1.1.3):
 
 ```bash
-# Download and extract the v1.1.2 release archive
-curl -LO https://github.com/Swadesh-c0de/vibe-fi/archive/refs/tags/v1.1.2.tar.gz
-tar -xzf v1.1.2.tar.gz
-cd vibe-fi-1.1.2
+# Download and extract the v1.1.3 release archive
+curl -LO https://github.com/Swadesh-c0de/vibe-fi/archive/refs/tags/v1.1.3.tar.gz
+tar -xzf v1.1.3.tar.gz
+cd vibe-fi-1.1.3
 chmod +x install.sh
 ./install.sh
 ```

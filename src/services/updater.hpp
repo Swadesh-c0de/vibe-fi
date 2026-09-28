@@ -6,7 +6,7 @@
 #include <cstdint>
 
 #ifndef VIBE_FI_VERSION
-#define VIBE_FI_VERSION "1.1.2"
+#define VIBE_FI_VERSION "1.1.3"
 #endif
 
 /**
@@ -16,7 +16,7 @@
 std::string check_latest_version(int timeout_seconds = 2);
 
 /**
- * Compares two semantic version strings (e.g. "v1.2.0" vs "1.1.2").
+ * Compares two semantic version strings (e.g. "v1.2.0" vs "1.1.3").
  * Returns true if latest is strictly newer than current.
  */
 bool is_newer_version(const std::string& latest, const std::string& current);
