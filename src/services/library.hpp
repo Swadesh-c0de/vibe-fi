@@ -19,7 +19,7 @@ public:
     std::vector<LibraryItem> list_directory(const std::string& path);
     std::vector<LibraryItem> search(const std::string& query);
     std::string get_home_music_dir();
-    bool is_audio_file(const std::string& filename);
+    static bool is_audio_file(const std::string& filename);
 
 private:
     std::string root_path;

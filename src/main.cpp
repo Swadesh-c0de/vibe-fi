@@ -3,11 +3,13 @@
 #include "utils.hpp"
 #include "search.hpp"
 #include "updater.hpp"
+#include "library.hpp"
 #include <iostream>
 #include <string>
 #include <vector>
 #include <filesystem>
 #include <clocale>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -20,7 +22,7 @@ static void print_help(const char* prog_name) {
               << "Usage:\n"
               << "  " << prog_name << "                      Launch interactive player\n"
               << "  " << prog_name << " <url>                Stream YouTube audio directly\n"
-              << "  " << prog_name << " <file>               Play local audio file\n"
+              << "  " << prog_name << " <file|dir>           Play local audio file or queue folder\n"
               << "  " << prog_name << " <search query>       Search and play track from YouTube\n"
               << "  " << prog_name << " --bottle | -b         Show isolated bottle dependency status\n"
               << "  " << prog_name << " --update | -u        Check and apply latest updates\n"
@@ -105,13 +107,31 @@ int main(int argc, char* argv[]) {
 
     try {
         Player player;
-        bool start_playback = false;
-
         for (const auto& input : playback_inputs) {
-            std::string url_to_play = input;
-            std::string stream_title;
-
-            if (is_url(input)) {
+            std::error_code ec;
+            if (fs::exists(input, ec) && fs::is_directory(input, ec)) {
+                // Directory: scan recursively for all supported audio files
+                std::vector<fs::path> dir_files;
+                for (const auto& entry : fs::recursive_directory_iterator(input, fs::directory_options::skip_permission_denied, ec)) {
+                    if (entry.is_regular_file(ec) && Library::is_audio_file(entry.path().string())) {
+                        dir_files.push_back(entry.path());
+                    }
+                }
+                std::sort(dir_files.begin(), dir_files.end());
+                for (const auto& p : dir_files) {
+                    std::string abs_path = fs::absolute(p).string();
+                    std::string title = p.stem().string();
+                    initial_queue.push_back({title, abs_path, ""});
+                }
+                if (dir_files.empty()) {
+                    startup_errors.push_back("No playable audio files found in: " + input);
+                }
+            } else if (fs::exists(input, ec)) {
+                // Single local file
+                std::string url_to_play = fs::absolute(input).string();
+                std::string stream_title = fs::path(url_to_play).stem().string();
+                initial_queue.push_back({stream_title, url_to_play, ""});
+            } else if (is_url(input)) {
                 if (!is_online()) {
                     std::cerr << ":: Error: Internet connection required to stream online URL.\n";
                     startup_errors.push_back("Internet connection required to stream URL.");
@@ -119,7 +139,7 @@ int main(int argc, char* argv[]) {
                 }
                 std::cout << "Resolving stream: " << input << "..." << std::endl;
                 StreamInfo info;
-                url_to_play = input;
+                std::string url_to_play = input;
                 try {
                     info = resolve_stream_info(input);
                 } catch (const std::exception& e) {
@@ -127,17 +147,12 @@ int main(int argc, char* argv[]) {
                     continue;
                 }
 
-                stream_title = info.title;
+                std::string stream_title = info.title;
                 if (!info.artist.empty() && stream_title.find(" - ") == std::string::npos) {
                     stream_title = info.artist + " - " + stream_title;
                 }
                 if (stream_title.empty()) stream_title = input;
                 initial_queue.push_back({stream_title, url_to_play, format_duration(info.duration)});
-            } else if (fs::exists(input)) {
-                // Local file exists
-                url_to_play = fs::absolute(input).string();
-                stream_title = fs::path(url_to_play).stem().string();
-                initial_queue.push_back({stream_title, url_to_play, ""});
             } else {
                 // Treat non-file input as YouTube search query
                 if (!is_online()) {
@@ -148,32 +163,28 @@ int main(int argc, char* argv[]) {
                 std::cout << "Searching YouTube for: " << input << "..." << std::endl;
                 auto search_hits = search_youtube(input, 5);
                 if (!search_hits.empty()) {
-                    url_to_play = search_hits.front().url;
-                    initial_queue = search_hits;
-                    stream_title = search_hits.front().title;
+                    for (const auto& hit : search_hits) {
+                        initial_queue.push_back(hit);
+                    }
                 } else {
                     startup_errors.push_back("No results for: " + input);
                     continue;
                 }
             }
+        }
 
+        bool start_playback = false;
+        if (!initial_queue.empty()) {
             try {
-                if (!start_playback) {
-                    player.load(url_to_play, "replace");
-                    if (!stream_title.empty()) {
-                        player.set_property("force-media-title", stream_title);
-                    }
-                    start_playback = true;
-                } else {
-                    player.load(url_to_play, "append-play");
+                player.load(initial_queue.front().url, "replace");
+                if (!initial_queue.front().title.empty()) {
+                    player.set_property("force-media-title", initial_queue.front().title);
                 }
+                start_playback = true;
+                player.play();
             } catch (const std::exception& e) {
                 startup_errors.push_back("Load error: " + std::string(e.what()));
             }
-        }
-
-        if (start_playback) {
-            player.play();
         }
 
         UI ui(player);
