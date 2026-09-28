@@ -19,18 +19,21 @@ Player::Player() : mpv(nullptr) {
 
     // Configure mpv defaults for optimal, resilient audio streaming
     check_error(mpv_set_option_string(mpv, "vo", "null"));                   // Audio only, disable video window
-    check_error(mpv_set_option_string(mpv, "video", "no"));                  // Audio only, disable video decoding entirely
     check_error(mpv_set_option_string(mpv, "audio-display", "no"));          // Don't render embedded album art as video
-    check_error(mpv_set_option_string(mpv, "osc", "no"));                    // Disable unused GUI on-screen controller
-    check_error(mpv_set_option_string(mpv, "load-stats-overlay", "no"));     // Disable unused stats overlay script
-    check_error(mpv_set_option_string(mpv, "load-console", "no"));           // Disable unused console script
-    check_error(mpv_set_option_string(mpv, "load-context-menu", "no"));      // Disable unused context menu script
-    check_error(mpv_set_option_string(mpv, "load-positioning", "no"));       // Disable unused positioning script
-    check_error(mpv_set_option_string(mpv, "load-select", "no"));            // Disable unused select script
-    check_error(mpv_set_option_string(mpv, "load-commands", "no"));          // Disable unused commands script
-    check_error(mpv_set_option_string(mpv, "load-auto-profiles", "no"));     // Disable unused auto profiles
     check_error(mpv_set_option_string(mpv, "ytdl", "yes"));                  // Enable YouTube extraction
     check_error(mpv_set_option_string(mpv, "ytdl-format", "251/140/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"));
+
+    // Optional optimizations: disable unused GUI scripts/overlays if supported by local libmpv version
+    mpv_set_option_string(mpv, "video", "no");
+    mpv_set_option_string(mpv, "osc", "no");
+    mpv_set_option_string(mpv, "load-stats-overlay", "no");
+    mpv_set_option_string(mpv, "load-console", "no");
+    mpv_set_option_string(mpv, "load-osd-console", "no");
+    mpv_set_option_string(mpv, "load-context-menu", "no");
+    mpv_set_option_string(mpv, "load-positioning", "no");
+    mpv_set_option_string(mpv, "load-select", "no");
+    mpv_set_option_string(mpv, "load-commands", "no");
+    mpv_set_option_string(mpv, "load-auto-profiles", "no");
 
     // Audio output fallback chain (PipeWire -> PulseAudio -> ALSA -> system default)
     mpv_set_option_string(mpv, "ao", "pipewire,pulse,alsa,coreaudio,audiotrack,");
