@@ -91,18 +91,19 @@ std::string check_latest_version(int timeout_seconds) {
     }
 
     std::string url = "https://api.github.com/repos/Swadesh-c0de/vibe-fi/releases/latest";
-    std::string cmd = shell_escape(curl_path) + " -s --max-time " + std::to_string(timeout_seconds) +
-                      " -H \"User-Agent: vibe-fi\" " + shell_escape(url) + " 2>/dev/null";
+    std::vector<std::string> args = {
+        curl_path,
+        "-s",
+        "--max-time",
+        std::to_string(timeout_seconds),
+        "-H",
+        "User-Agent: vibe-fi",
+        url
+    };
 
-    UniquePipe pipe(popen(cmd.c_str(), "r"));
-    if (!pipe) {
+    std::string response = run_process_capture(args, timeout_seconds + 2);
+    if (response.empty()) {
         return "";
-    }
-
-    std::string response;
-    std::array<char, 1024> buffer;
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        response += buffer.data();
     }
 
     // Parse "tag_name" field from GitHub JSON

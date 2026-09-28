@@ -2,6 +2,9 @@
 #include "utils.hpp"
 #include "mpris.hpp"
 #include "updater.hpp"
+#if defined(__linux__)
+#include <malloc.h>
+#endif
 #include <ncurses.h>
 #include <cmath>
 #include <vector>
@@ -241,6 +244,15 @@ void UI::run() {
         
         // Poll mpv events (EOF, ERROR, FILE_LOADED, etc.)
         player.poll_events();
+
+        // Periodic memory trim to return unused heap pages to OS
+        static int trim_counter = 0;
+        if (++trim_counter >= 150) {
+            trim_counter = 0;
+#if defined(__linux__)
+            malloc_trim(0);
+#endif
+        }
 
         // Autoplay check: transition to next track ONLY when track naturally finishes (EOF)
         if (player.consume_track_finished()) {
@@ -1961,6 +1973,9 @@ void UI::fetch_current_lyrics(std::string title_override, std::string url_overri
 
 void UI::start_track_playback(const std::string& title, const std::string& url, const std::string& duration_str, const std::string& artist_hint) {
     try {
+#if defined(__linux__)
+        malloc_trim(0);
+#endif
         visualizer.reset();
         last_played_path = url;
         lyrics_resolved_for_current_track = false;

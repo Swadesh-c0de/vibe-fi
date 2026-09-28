@@ -11,10 +11,20 @@
 #include <clocale>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <spawn.h>
+#include <signal.h>
+
+#if defined(__APPLE__)
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
+#else
+extern char** environ;
+#endif
 
 namespace fs = std::filesystem;
 
@@ -31,6 +41,72 @@ std::string shell_escape(const std::string& arg) {
     return escaped;
 }
 
+std::string run_process_capture(const std::vector<std::string>& args, int timeout_seconds) {
+    if (args.empty()) return "";
+
+    int pipe_fd[2];
+    if (pipe(pipe_fd) != 0) return "";
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addclose(&actions, pipe_fd[0]);
+    posix_spawn_file_actions_adddup2(&actions, pipe_fd[1], STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&actions, pipe_fd[1]);
+
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull >= 0) {
+        posix_spawn_file_actions_adddup2(&actions, devnull, STDERR_FILENO);
+        posix_spawn_file_actions_addclose(&actions, devnull);
+    }
+
+    std::vector<char*> c_args;
+    c_args.reserve(args.size() + 1);
+    for (const auto& a : args) c_args.push_back(const_cast<char*>(a.c_str()));
+    c_args.push_back(nullptr);
+
+    pid_t pid = 0;
+    int status = posix_spawnp(&pid, c_args[0], &actions, nullptr, c_args.data(), environ);
+    posix_spawn_file_actions_destroy(&actions);
+    if (devnull >= 0) close(devnull);
+    close(pipe_fd[1]);
+
+    if (status != 0) {
+        close(pipe_fd[0]);
+        return "";
+    }
+
+    std::string output;
+    char buf[2048];
+    struct pollfd pfd;
+    pfd.fd = pipe_fd[0];
+    pfd.events = POLLIN;
+
+    int remaining_ms = timeout_seconds * 1000;
+    while (remaining_ms > 0) {
+        int wait_slice = (remaining_ms > 500) ? 500 : remaining_ms;
+        int pr = poll(&pfd, 1, wait_slice);
+        if (pr > 0 && (pfd.revents & (POLLIN | POLLHUP))) {
+            ssize_t n = read(pipe_fd[0], buf, sizeof(buf));
+            if (n <= 0) break;
+            output.append(buf, n);
+        } else if (pr == 0) {
+            remaining_ms -= wait_slice;
+            if (remaining_ms <= 0) {
+                kill(pid, SIGKILL);
+                break;
+            }
+        } else {
+            if (errno == EINTR) continue;
+            break;
+        }
+    }
+    close(pipe_fd[0]);
+
+    int wstatus = 0;
+    waitpid(pid, &wstatus, 0);
+    return output;
+}
+
 static int parse_ytdlp_year(const std::string& ver_str) {
     if (ver_str.length() < 4) return 0;
     try {
@@ -44,15 +120,9 @@ static std::string get_executable_version(const std::string& exe_path) {
     if (exe_path.empty() || !fs::exists(exe_path) || access(exe_path.c_str(), X_OK) != 0) {
         return "";
     }
-    UniquePipe p(popen((shell_escape(exe_path) + " --version 2>/dev/null").c_str(), "r"));
-    if (!p) return "";
-    char buf[128];
-    if (fgets(buf, sizeof(buf), p.get())) {
-        std::string ver = buf;
-        while (!ver.empty() && (ver.back() == '\n' || ver.back() == '\r')) ver.pop_back();
-        return ver;
-    }
-    return "";
+    std::string ver = run_process_capture({exe_path, "--version"}, 3);
+    while (!ver.empty() && (ver.back() == '\n' || ver.back() == '\r')) ver.pop_back();
+    return ver;
 }
 
 std::string find_executable(const std::string& name) {
@@ -217,23 +287,21 @@ StreamInfo resolve_stream_info(const std::string& url) {
         return info;
     }
 
-    std::string cmd = shell_escape(ytdl_path) + 
-                      " --no-progress -f bestaudio --no-warnings --print \"%(title)s|%(uploader)s|%(artist)s|%(duration)s\" -g " + 
-                      shell_escape(url) + " 2>/dev/null";
+    std::vector<std::string> args = {
+        ytdl_path,
+        "--no-progress",
+        "-f", "bestaudio",
+        "--no-warnings",
+        "--print", "%(title)s|%(uploader)s|%(artist)s|%(duration)s",
+        "-g",
+        url
+    };
 
-    UniquePipe pipe(popen(cmd.c_str(), "r"));
-    if (!pipe) {
-        return info;
-    }
-
-    char buffer[2048];
+    std::string output = run_process_capture(args, 15);
+    std::stringstream ss(output);
     std::string line1, line2;
-    if (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        line1 = buffer;
-    }
-    if (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        line2 = buffer;
-    }
+    std::getline(ss, line1);
+    std::getline(ss, line2);
 
     auto trim_line = [](std::string& s) {
         while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
@@ -419,23 +487,20 @@ void parse_artist_and_title(const std::string& raw_title, const std::string& raw
 
 std::string get_audio_duration(const std::string& path) {
     std::string ffprobe_path = find_executable("ffprobe");
-    std::string cmd = shell_escape(ffprobe_path) + " -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 " + shell_escape(path) + " 2>/dev/null";
-
-    UniquePipe pipe(popen(cmd.c_str(), "r"));
-    if (!pipe) {
+    if (ffprobe_path.empty()) {
         return "";
     }
 
-    std::array<char, 128> buffer;
-    std::string result;
-    if (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        result = buffer.data();
-    }
+    std::vector<std::string> args = {
+        ffprobe_path,
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path
+    };
 
-    if (!result.empty() && result.back() == '\n') {
-        result.pop_back();
-    }
-    if (!result.empty() && result.back() == '\r') {
+    std::string result = run_process_capture(args, 5);
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
         result.pop_back();
     }
 
@@ -676,14 +741,7 @@ void print_bottle_status() {
     std::string ytdl_ver;
     bool ytdl_outdated = false;
     if (ytdl != "yt-dlp" && fs::exists(ytdl)) {
-        UniquePipe p(popen((shell_escape(ytdl) + " --version 2>/dev/null").c_str(), "r"));
-        if (p) {
-            char buf[128];
-            if (fgets(buf, sizeof(buf), p.get())) {
-                ytdl_ver = buf;
-                while (!ytdl_ver.empty() && (ytdl_ver.back() == '\n' || ytdl_ver.back() == '\r')) ytdl_ver.pop_back();
-            }
-        }
+        ytdl_ver = get_executable_version(ytdl);
         try {
             if (ytdl_ver.length() >= 4 && std::stoi(ytdl_ver.substr(0, 4)) < 2025) {
                 ytdl_outdated = true;

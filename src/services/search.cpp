@@ -9,25 +9,25 @@ std::vector<SearchResult> search_youtube(const std::string& query, int limit) {
     if (query.empty() || !is_online()) return results;
 
     std::string ytdl_path = find_executable("yt-dlp");
+    if (ytdl_path.empty()) return results;
     std::string search_term = "ytsearch" + std::to_string(limit) + ":" + query;
 
-    std::string cmd = shell_escape(ytdl_path) + 
-                      " --print \"%(title)s|%(uploader)s|%(webpage_url)s|%(duration_string)s\"" +
-                      " --flat-playlist --no-warnings " + 
-                      shell_escape(search_term) + " 2>/dev/null";
+    std::vector<std::string> args = {
+        ytdl_path,
+        "--print",
+        "%(title)s|%(uploader)s|%(webpage_url)s|%(duration_string)s",
+        "--flat-playlist",
+        "--no-warnings",
+        search_term
+    };
 
-    UniquePipe pipe(popen(cmd.c_str(), "r"));
-    if (!pipe) {
+    std::string accumulated = run_process_capture(args, 15);
+    if (accumulated.empty()) {
         return results;
     }
 
-    char buffer[2048];
-    std::string accumulated;
-
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-        accumulated += buffer;
-        size_t newline_pos;
-        while ((newline_pos = accumulated.find('\n')) != std::string::npos) {
+    size_t newline_pos;
+    while ((newline_pos = accumulated.find('\n')) != std::string::npos) {
             std::string line = accumulated.substr(0, newline_pos);
             accumulated.erase(0, newline_pos + 1);
 
@@ -76,7 +76,6 @@ std::vector<SearchResult> search_youtube(const std::string& query, int limit) {
                 results.push_back(result);
             }
         }
-    }
 
     return results;
 }

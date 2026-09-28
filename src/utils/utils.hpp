@@ -17,9 +17,10 @@ struct PipeCloser {
 
 using UniquePipe = std::unique_ptr<FILE, PipeCloser>;
 
-// Shell command escaping and executable search
+// Shell command escaping, process execution, and executable search
 std::string shell_escape(const std::string& arg);
 std::string find_executable(const std::string& name);
+std::string run_process_capture(const std::vector<std::string>& args, int timeout_seconds = 10);
 
 // URL and stream helpers
 struct StreamInfo {

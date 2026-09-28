@@ -42,7 +42,16 @@ static void print_help(const char* prog_name) {
               << "  ESC / Q     Back / Quit\n";
 }
 
+#if defined(__linux__)
+#include <malloc.h>
+#endif
+
 int main(int argc, char* argv[]) {
+#if defined(__linux__)
+    mallopt(M_ARENA_MAX, 2);
+    mallopt(M_TRIM_THRESHOLD, 64 * 1024);
+    mallopt(M_MMAP_THRESHOLD, 64 * 1024);
+#endif
     setup_utf8_locale();
     std::vector<std::string> startup_errors;
     std::vector<SearchResult> initial_queue;

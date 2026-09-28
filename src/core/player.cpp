@@ -6,6 +6,10 @@
 #include <clocale>
 #include <cstring>
 
+#if defined(__linux__)
+#include <malloc.h>
+#endif
+
 Player::Player() : mpv(nullptr) {
     std::setlocale(LC_NUMERIC, "C"); // libmpv requires LC_NUMERIC="C" to parse decimal points reliably
     mpv = mpv_create();
@@ -15,9 +19,18 @@ Player::Player() : mpv(nullptr) {
 
     // Configure mpv defaults for optimal, resilient audio streaming
     check_error(mpv_set_option_string(mpv, "vo", "null"));                   // Audio only, disable video window
+    check_error(mpv_set_option_string(mpv, "video", "no"));                  // Audio only, disable video decoding entirely
+    check_error(mpv_set_option_string(mpv, "audio-display", "no"));          // Don't render embedded album art as video
+    check_error(mpv_set_option_string(mpv, "osc", "no"));                    // Disable unused GUI on-screen controller
+    check_error(mpv_set_option_string(mpv, "load-stats-overlay", "no"));     // Disable unused stats overlay script
+    check_error(mpv_set_option_string(mpv, "load-console", "no"));           // Disable unused console script
+    check_error(mpv_set_option_string(mpv, "load-context-menu", "no"));      // Disable unused context menu script
+    check_error(mpv_set_option_string(mpv, "load-positioning", "no"));       // Disable unused positioning script
+    check_error(mpv_set_option_string(mpv, "load-select", "no"));            // Disable unused select script
+    check_error(mpv_set_option_string(mpv, "load-commands", "no"));          // Disable unused commands script
+    check_error(mpv_set_option_string(mpv, "load-auto-profiles", "no"));     // Disable unused auto profiles
     check_error(mpv_set_option_string(mpv, "ytdl", "yes"));                  // Enable YouTube extraction
     check_error(mpv_set_option_string(mpv, "ytdl-format", "251/140/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"));
-    check_error(mpv_set_option_string(mpv, "audio-display", "no"));          // Don't render embedded album art as video
 
     // Audio output fallback chain (PipeWire -> PulseAudio -> ALSA -> system default)
     mpv_set_option_string(mpv, "ao", "pipewire,pulse,alsa,coreaudio,audiotrack,");
@@ -25,8 +38,9 @@ Player::Player() : mpv(nullptr) {
     // Network resilience: buffer audio stream safely while keeping memory under 35 MB
     mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_delay_max=5");
     mpv_set_option_string(mpv, "network-timeout", "30");
-    mpv_set_option_string(mpv, "demuxer-max-bytes", "8MiB");
-    mpv_set_option_string(mpv, "demuxer-readahead-secs", "30");
+    mpv_set_option_string(mpv, "demuxer-max-bytes", "4MiB");
+    mpv_set_option_string(mpv, "demuxer-max-back-bytes", "512KiB");
+    mpv_set_option_string(mpv, "demuxer-readahead-secs", "15");
 
     // Request error/warning logs from mpv to record into vibe.log
     mpv_request_log_messages(mpv, "warn");
@@ -42,6 +56,9 @@ Player::Player() : mpv(nullptr) {
     mpv_set_option_string(mpv, "af", "@astats:lavfi=[astats=metadata=1:reset=1:length=0.04]");
 
     check_error(mpv_initialize(mpv));
+#if defined(__linux__)
+    malloc_trim(0);
+#endif
 }
 
 Player::~Player() {

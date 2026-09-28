@@ -257,19 +257,18 @@ LyricsData LyricsManager::fetch_lyrics(const std::string& artist, const std::str
 }
 
 std::string LyricsManager::perform_request(const std::string& url) {
-    std::string cmd = "curl -s --max-time 6 " + shell_escape(url);
-    UniquePipe pipe(popen(cmd.c_str(), "r"));
-    if (!pipe) {
-        return "";
-    }
+    std::string curl_path = find_executable("curl");
+    if (curl_path.empty()) curl_path = "curl";
 
-    std::array<char, 2048> buffer;
-    std::string result;
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        result += buffer.data();
-    }
+    std::vector<std::string> args = {
+        curl_path,
+        "-s",
+        "--max-time",
+        "6",
+        url
+    };
 
-    return result;
+    return run_process_capture(args, 8);
 }
 
 LyricsData LyricsManager::parse_json_response(const std::string& json) {
