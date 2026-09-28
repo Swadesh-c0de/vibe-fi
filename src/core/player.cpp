@@ -22,11 +22,11 @@ Player::Player() : mpv(nullptr) {
     // Audio output fallback chain (PipeWire -> PulseAudio -> ALSA -> system default)
     mpv_set_option_string(mpv, "ao", "pipewire,pulse,alsa,coreaudio,audiotrack,");
 
-    // Network resilience: buffer up to 32MB ahead, 30s timeout, safe reconnect
+    // Network resilience: buffer audio stream safely while keeping memory under 35 MB
     mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_delay_max=5");
     mpv_set_option_string(mpv, "network-timeout", "30");
-    mpv_set_option_string(mpv, "demuxer-max-bytes", "32MiB");
-    mpv_set_option_string(mpv, "demuxer-readahead-secs", "60");
+    mpv_set_option_string(mpv, "demuxer-max-bytes", "8MiB");
+    mpv_set_option_string(mpv, "demuxer-readahead-secs", "30");
 
     // Request error/warning logs from mpv to record into vibe.log
     mpv_request_log_messages(mpv, "warn");
