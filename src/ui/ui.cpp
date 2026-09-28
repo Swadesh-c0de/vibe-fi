@@ -200,6 +200,12 @@ void UI::run() {
                 case MprisAction::PLAY_PAUSE:
                     player.toggle_pause();
                     break;
+                case MprisAction::PLAY:
+                    player.play();
+                    break;
+                case MprisAction::PAUSE:
+                    player.pause();
+                    break;
                 case MprisAction::NEXT:
                     play_next();
                     break;
@@ -211,6 +217,16 @@ void UI::run() {
                     break;
                 case MprisAction::NONE:
                     break;
+            }
+        }
+
+        // Sync MPRIS status and position
+        {
+            std::string cur_status = player.is_idle() ? "Stopped" : (player.is_paused() ? "Paused" : "Playing");
+            update_mpris_playback_status(cur_status);
+            double pos_sec = player.get_position();
+            if (pos_sec > 0.0) {
+                update_mpris_position(static_cast<int64_t>(pos_sec * 1000000.0));
             }
         }
 
@@ -1930,15 +1946,24 @@ void UI::fetch_current_lyrics(std::string title_override, std::string url_overri
         discord_rpc->update_presence(song_title, artist);
     }
 
+    double dur = duration_override;
+    if (dur <= 0.0) dur = player.get_duration();
+
+    MprisMetadata meta;
+    meta.title = song_title.empty() ? title : song_title;
+    meta.artist = artist.empty() ? "Unknown Artist" : artist;
+    meta.url = last_played_path;
+    meta.length_us = static_cast<int64_t>(dur * 1000000.0);
+    meta.playback_status = "Playing";
+    meta.volume = player.get_volume() / 100.0;
+    update_mpris_metadata(meta);
+
     // Check if the current in-memory lyrics already belong to this exact track and are resolved
     bool is_same_track = (current_lyrics_title == title || (!song_title.empty() && current_lyrics_title == song_title));
     if (is_same_track && lyrics_resolved_for_current_track &&
         (current_lyrics_data.has_synced || (!current_lyrics_data.plain_lyrics.empty() && current_lyrics_data.plain_lyrics != "Fetching lyrics..."))) {
         return;
     }
-
-    double dur = duration_override;
-    if (dur <= 0.0) dur = player.get_duration();
 
     // 1. Fast path: load instantly from disk cache (< 0.3ms) without flashing any status messages
     LyricsData cached_lyrics;
@@ -2018,6 +2043,16 @@ void UI::start_track_playback(const std::string& title, const std::string& url, 
         player.play();
 
         double dur = parse_duration_to_seconds(duration_str);
+
+        MprisMetadata init_meta;
+        init_meta.title = display_title;
+        init_meta.artist = inferred_artist.empty() ? "Unknown Artist" : inferred_artist;
+        init_meta.url = url;
+        init_meta.length_us = static_cast<int64_t>(dur * 1000000.0);
+        init_meta.playback_status = "Playing";
+        init_meta.volume = player.get_volume() / 100.0;
+        update_mpris_metadata(init_meta);
+
         fetch_current_lyrics(display_title, url, dur, inferred_artist);
     } catch (const std::exception& e) {
         show_message(std::string("Playback error: ") + e.what());
